@@ -57,6 +57,7 @@ class NotePatch(BaseModel):
 class ShareRequest(BaseModel):
     groupId: str
     topicId: str | None = None
+    includeFile: bool = True
 
 
 class AnswerRequest(BaseModel):
@@ -72,6 +73,7 @@ class GroupNoteCreate(BaseModel):
     url: str | None = Field(default=None, max_length=1000)
     topicId: str | None = None
     tags: list[str] = Field(default_factory=list, max_length=30)
+    fileId: str | None = None
 
 
 class FileOut(BaseModel):

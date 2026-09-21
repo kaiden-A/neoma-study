@@ -59,7 +59,7 @@ export function GroupPage({ groupId }: { groupId: string }) {
   const tabs: { id: TabId; label: string; icon: string; count: number }[] =
     group.kind === "study"
       ? [
-          { id: "notes", label: "Notes", icon: "fa-note-sticky", count: notesCount },
+          { id: "notes", label: "Subjects", icon: "fa-layer-group", count: group.topics.length },
           { id: "members", label: "Members", icon: "fa-user-group", count: group.members.length },
           { id: "plan", label: "Plan", icon: "fa-list-check", count: stats.open },
         ]
@@ -168,7 +168,9 @@ export function GroupPage({ groupId }: { groupId: string }) {
                 <i className={`fa-solid ${group.kind === "study" ? "fa-note-sticky" : "fa-list-check"}`} aria-hidden="true" />
                 {group.kind === "study" ? "Study group" : "Project group"}
               </span>
-              {group.subject ? <MarkerChip name={group.subject} markerKey={group.color} small /> : null}
+              {group.kind === "project" && group.subject ? (
+                <MarkerChip name={group.subject} markerKey={group.color} small />
+              ) : null}
               {group.kind === "project" && stats.overdue > 0 ? (
                 <span className="nm-chip nm-chip--sm nm-chip--danger">
                   <i className="fa-solid fa-circle-exclamation" aria-hidden="true" />
@@ -218,10 +220,13 @@ export function GroupPage({ groupId }: { groupId: string }) {
                 {study.notes} shared note{study.notes === 1 ? "" : "s"}
               </span>
               <span className="nm-mono">
-                {group.members.length} member{group.members.length === 1 ? "" : "s"}
+                {study.topicCount} subject{study.topicCount === 1 ? "" : "s"}
               </span>
               <span className="nm-mono">
-                {study.topicCount} topic{study.topicCount === 1 ? "" : "s"}
+                {study.files} file{study.files === 1 ? "" : "s"}
+              </span>
+              <span className="nm-mono">
+                {group.members.length} member{group.members.length === 1 ? "" : "s"}
               </span>
               {study.openRequests > 0 ? (
                 <span className="nm-chip nm-chip--sm nm-chip--warn">
@@ -277,7 +282,7 @@ export function GroupPage({ groupId }: { groupId: string }) {
             { label: "Rename group", icon: "fa-pen", onSelect: () => void rename() },
             { label: "Change colour", icon: "fa-palette", onSelect: () => setColourOpen(true) },
             ...(group.kind === "study"
-              ? [{ label: "Manage topics", icon: "fa-tags", onSelect: () => setTopicManagerOpen(true) }]
+              ? [{ label: "Manage subjects", icon: "fa-tags", onSelect: () => setTopicManagerOpen(true) }]
               : []),
             {
               label: "New invite code",
@@ -351,11 +356,17 @@ function TopicManager({ groupId, onClose }: { groupId: string; onClose: () => vo
   const [name, setName] = useState("");
 
   if (!group) return null;
+  const isStudy = group.kind === "study";
+  const noun = isStudy ? "subject" : "topic";
 
   return (
     <Modal
-      title={`Topics in ${group.name}`}
-      subtitle="Shared notes are filed under these, so the crew can filter by unit."
+      title={`${isStudy ? "Subjects" : "Topics"} in ${group.name}`}
+      subtitle={
+        isStudy
+          ? "Every shared note and file is filed under one of these, so the crew can filter by subject."
+          : "Shared notes are filed under these, so the crew can filter by unit."
+      }
       size="sm"
       onClose={onClose}
       footer={
@@ -368,7 +379,9 @@ function TopicManager({ groupId, onClose }: { groupId: string; onClose: () => vo
       }
     >
       {group.topics.length === 0 ? (
-        <p className="nm-help mb-3">No topics yet. Add the units you trade notes from.</p>
+        <p className="nm-help mb-3">
+          No {noun}s yet. {isStudy ? "Add the units this crew trades notes from." : "Add the units you file notes under."}
+        </p>
       ) : (
         <div className="nm-topiclist">
           {group.topics.map((topic) => (
@@ -377,13 +390,13 @@ function TopicManager({ groupId, onClose }: { groupId: string; onClose: () => vo
               <input
                 className="nm-input"
                 defaultValue={topic.name}
-                aria-label="Topic name"
+                aria-label={`${isStudy ? "Subject" : "Topic"} name`}
                 onBlur={(event) => {
                   const value = event.target.value.trim();
                   if (value && value !== topic.name) {
                     void store
                       .renameTopic(group.id, topic.id, value)
-                      .then(() => toast("Topic renamed", { kind: "success" }));
+                      .then(() => toast(`${isStudy ? "Subject" : "Topic"} renamed`, { kind: "success" }));
                   }
                 }}
               />
@@ -402,7 +415,7 @@ function TopicManager({ groupId, onClose }: { groupId: string; onClose: () => vo
       <div className="nm-inline-add">
         <input
           className="nm-input"
-          placeholder="Add a topic, e.g. MATH201"
+          placeholder={`Add a ${noun}, e.g. MATH201`}
           value={name}
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {

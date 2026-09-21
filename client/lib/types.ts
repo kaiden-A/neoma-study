@@ -263,6 +263,7 @@ export interface GroupNoteInput {
   url?: string | null;
   topicId?: string | null;
   tags?: string[];
+  fileId?: string | null;
 }
 
 export interface AnswerInput {

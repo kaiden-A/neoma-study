@@ -35,7 +35,7 @@ from ..schemas.groups import (
     TopicOut,
 )
 from ..utils import to_ms
-from . import access, email_services
+from . import access, email_services, file_services, storage_services
 from .errors import ConflictError, InvalidError, NotFoundError
 
 INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -170,9 +170,12 @@ def update_group(db: DbSession, user: User, group_id: uuid.UUID, patch: GroupPat
     return group_out(db, group)
 
 
-def delete_group(db: DbSession, user: User, group_id: uuid.UUID) -> None:
-    """Owner only. Tasks, notes, topics and links cascade; events unlink."""
+def delete_group(
+    db: DbSession, user: User, group_id: uuid.UUID, storage: storage_services.Storage
+) -> None:
+    """Owner only. Tasks, notes, topics, links and files cascade; events unlink."""
     group = access.require_group_owner(db, group_id, user)
+    file_services.purge_group_files(db, storage, group.id)
     db.delete(group)
     db.commit()
 

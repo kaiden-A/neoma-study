@@ -70,7 +70,7 @@ export function NewGroupModal({
   return (
     <Modal
       title="New group"
-      subtitle="A project group runs a task board. A study group trades notes and books sessions."
+      subtitle="A project group runs a task board. A study group keeps subjects, notes and files."
       onClose={onClose}
       footer={
         <>
@@ -114,7 +114,7 @@ export function NewGroupModal({
       </div>
       <p className="nm-help mb-3">
         {kind === "study"
-          ? "Notes come first: shared subjects, note requests and study sessions."
+          ? "Notes and files come first: this group is for the people, so add the subjects you trade notes from."
           : "Tasks come first: a board, deadlines and reminders for the group."}
       </p>
 
@@ -133,9 +133,9 @@ export function NewGroupModal({
 
       {kind === "study" ? (
         <Field
-          label="Topics"
+          label="Subjects"
           htmlFor="ng-topics"
-          help="Comma separated. Members file shared notes under these, and can filter by them."
+          help="Comma separated. Members post notes and files into these, and filter by them."
         >
           <input
             id="ng-topics"

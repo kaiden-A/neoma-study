@@ -1,3 +1,4 @@
+import io
 import uuid
 
 import pytest
@@ -291,6 +292,21 @@ def test_email_log_dedupes_invites(
     # invited again after the link changes.
     client.post(f"/api/groups/{group['id']}/invite-code")
     assert len(sent_emails) == 1
+
+
+def test_deleting_a_group_purges_its_files(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    sign_in(make_user(db))
+    group = _create_group(client, kind="study", name="Finals crew")
+    upload = client.post(
+        "/api/files",
+        files={"file": ("scan.jpg", io.BytesIO(b"img"), "image/jpeg")},
+        data={"groupId": group["id"]},
+    ).json()
+
+    assert client.delete(f"/api/groups/{group['id']}").status_code == 204
+    assert storage.deleted == [f"groups/{group['id']}/{upload['id']}"]
 
 
 def test_service_adopts_placeholder_directly(db: DbSession, make_user) -> None:

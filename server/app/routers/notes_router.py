@@ -75,8 +75,11 @@ def share_note(
     data: ShareRequest,
     user: User = Depends(require_user),
     db: DbSession = Depends(get_db),
+    storage: Storage = Depends(get_storage),
 ) -> NoteOut:
-    return note_services.share_to_group(db, user, note_id, data.groupId, data.topicId)
+    return note_services.share_to_group(
+        db, user, note_id, data.groupId, data.topicId, storage=storage, include_file=data.includeFile
+    )
 
 
 @router.post("/{note_id}/answer", response_model=NoteOut, status_code=201)

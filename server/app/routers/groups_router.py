@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session as DbSession
 
 from ..database import get_db
-from ..dependencies import require_user
+from ..dependencies import get_storage, require_user
 from ..models import User
 from ..schemas.groups import (
     GroupCreate,
@@ -19,6 +19,7 @@ from ..schemas.groups import (
 )
 from ..schemas.notes import GroupNoteCreate, NoteOut
 from ..services import group_services, note_services
+from ..services.storage_services import Storage
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -54,9 +55,12 @@ def update_group(
 
 @router.delete("/{group_id}", status_code=204)
 def delete_group(
-    group_id: uuid.UUID, user: User = Depends(require_user), db: DbSession = Depends(get_db)
+    group_id: uuid.UUID,
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+    storage: Storage = Depends(get_storage),
 ) -> None:
-    group_services.delete_group(db, user, group_id)
+    group_services.delete_group(db, user, group_id, storage)
 
 
 @router.post("/{group_id}/invite", response_model=MemberOut, status_code=201)

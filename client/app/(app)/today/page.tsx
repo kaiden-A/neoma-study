@@ -369,7 +369,7 @@ export default function TodayPage() {
                           <MarkerChip key={topic.id} name={topic.name} markerKey={topic.color} small />
                         ))}
                         {group.topics.length === 0 ? (
-                          <span className="nm-mono nm-meta">no topics yet</span>
+                          <span className="nm-mono nm-meta">no subjects yet</span>
                         ) : null}
                       </span>
                     ) : (

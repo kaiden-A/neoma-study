@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session as DbSession
 
 from ..config import Settings, get_settings
@@ -8,28 +8,32 @@ from ..database import get_db
 from ..dependencies import get_storage, require_user
 from ..models import FileObject, User
 from ..schemas.notes import FileOut, FileUrlOut
-from ..services import storage_services
-from ..services.errors import InvalidError, NotFoundError
+from ..services import access, file_services
+from ..services.errors import InvalidError
+from ..services.storage_services import Storage
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
-MISSING_FILE = "That file is gone."
 
-
-def _owned(db: DbSession, user: User, file_id: uuid.UUID) -> FileObject:
-    file = db.get(FileObject, file_id)
-    if file is None or file.owner_id != user.id:
-        raise NotFoundError(MISSING_FILE)
-    return file
+def _target_group(db: DbSession, user: User, group_id: str | None) -> uuid.UUID | None:
+    if not group_id:
+        return None
+    try:
+        group_uuid = uuid.UUID(group_id)
+    except ValueError as exc:
+        raise InvalidError("That group id is not valid.") from exc
+    access.require_group(db, group_uuid, user)
+    return group_uuid
 
 
 @router.post("", response_model=FileOut, status_code=201)
 def upload(
     file: UploadFile = File(...),
     thumb: UploadFile | None = File(default=None),
+    groupId: str | None = Form(default=None),
     user: User = Depends(require_user),
     db: DbSession = Depends(get_db),
-    storage: storage_services.Storage = Depends(get_storage),
+    storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
 ) -> FileOut:
     data = file.file.read()
@@ -38,8 +42,10 @@ def upload(
     if len(data) > settings.max_upload_bytes:
         raise InvalidError("That file is over 15 MB")
 
+    group_uuid = _target_group(db, user, groupId)
     record = FileObject(
         owner_id=user.id,
+        group_id=group_uuid,
         key="",
         name=(file.filename or "file")[:300],
         content_type=(file.content_type or "application/octet-stream")[:160],
@@ -48,7 +54,9 @@ def upload(
     db.add(record)
     db.flush()
 
-    prefix = f"users/{user.id}/{record.id}"
+    prefix = (
+        f"groups/{group_uuid}/{record.id}" if group_uuid is not None else f"users/{user.id}/{record.id}"
+    )
     record.key = prefix
     storage.put(prefix, data, record.content_type)
 
@@ -69,9 +77,9 @@ def file_url(
     thumb: bool = False,
     user: User = Depends(require_user),
     db: DbSession = Depends(get_db),
-    storage: storage_services.Storage = Depends(get_storage),
+    storage: Storage = Depends(get_storage),
 ) -> FileUrlOut:
-    record = _owned(db, user, file_id)
+    record = file_services.require_visible_file(db, user, file_id)
     key = record.thumb_key if thumb and record.thumb_key else record.key
     return FileUrlOut(url=storage.presigned_get(key))
 
@@ -81,10 +89,8 @@ def delete_file(
     file_id: uuid.UUID,
     user: User = Depends(require_user),
     db: DbSession = Depends(get_db),
-    storage: storage_services.Storage = Depends(get_storage),
+    storage: Storage = Depends(get_storage),
 ) -> None:
-    record = _owned(db, user, file_id)
-    storage.delete(record.key)
-    storage.delete(record.thumb_key)
-    db.delete(record)
+    record = file_services.require_deletable_file(db, user, file_id)
+    file_services.purge_file(db, storage, record)
     db.commit()

@@ -11,11 +11,12 @@ from sqlalchemy.orm import sessionmaker
 from app import models  # noqa: F401  (register models on Base.metadata)
 from app.config import get_settings
 from app.database import Base, get_db
-from app.dependencies import get_zitadel
+from app.dependencies import get_storage, get_zitadel
 from app.main import app
 from app.models import User
 from app.models.enums import UserKind
 from app.services.auth_services import create_session
+from app.services.storage_services import Storage
 
 settings = get_settings()
 SCHEMA = f"neoma_test_{uuid.uuid4().hex[:8]}"
@@ -119,6 +120,42 @@ def sign_in(db: DbSession, client: TestClient):
         return token
 
     return _sign_in
+
+
+class FakeStorage(Storage):
+    """Records object writes without touching R2."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.deleted: list[str] = []
+        self.copies: list[tuple[str, str]] = []
+
+    @property
+    def configured(self) -> bool:
+        return True
+
+    def put(self, key: str, data: bytes, content_type: str) -> None:
+        self.objects[key] = data
+
+    def delete(self, key: str | None) -> None:
+        if key:
+            self.deleted.append(key)
+            self.objects.pop(key, None)
+
+    def copy(self, source_key: str, dest_key: str) -> None:
+        self.copies.append((source_key, dest_key))
+        self.objects[dest_key] = self.objects.get(source_key, b"")
+
+    def presigned_get(self, key: str) -> str:
+        return f"https://r2.test/{key}?signed=1"
+
+
+@pytest.fixture
+def storage() -> Iterator[FakeStorage]:
+    fake = FakeStorage()
+    app.dependency_overrides[get_storage] = lambda: fake
+    yield fake
+    app.dependency_overrides.pop(get_storage, None)
 
 
 class FakeZitadel:

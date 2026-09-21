@@ -71,7 +71,9 @@ export default function GroupsPage() {
                     <i className={`fa-solid ${group.kind === "study" ? "fa-note-sticky" : "fa-list-check"}`} aria-hidden="true" />
                     {group.kind === "study" ? "Study" : "Project"}
                   </span>
-                  {group.subject ? <MarkerChip name={group.subject} markerKey={group.color} small /> : null}
+                  {group.kind === "project" && group.subject ? (
+                    <MarkerChip name={group.subject} markerKey={group.color} small />
+                  ) : null}
                   {group.kind === "study" && study.openRequests > 0 ? (
                     <span className="nm-chip nm-chip--sm nm-chip--warn">
                       <i className="fa-solid fa-circle-question" aria-hidden="true" />
@@ -96,7 +98,10 @@ export default function GroupsPage() {
                         {study.notes} shared note{study.notes === 1 ? "" : "s"}
                       </span>
                       <span>
-                        {study.topicCount} topic{study.topicCount === 1 ? "" : "s"}
+                        {study.topicCount} subject{study.topicCount === 1 ? "" : "s"}
+                      </span>
+                      <span>
+                        {study.files} file{study.files === 1 ? "" : "s"}
                       </span>
                       <span>
                         {study.nextSession ? `session ${fmtRelative(study.nextSession.startsAt, now)}` : "no session booked"}
@@ -118,7 +123,7 @@ export default function GroupsPage() {
                       {group.topics.slice(0, 4).map((topic) => (
                         <MarkerChip key={topic.id} name={topic.name} markerKey={topic.color} small />
                       ))}
-                      {group.topics.length === 0 ? <span className="nm-mono nm-meta">no topics yet</span> : null}
+                      {group.topics.length === 0 ? <span className="nm-mono nm-meta">no subjects yet</span> : null}
                     </div>
                   ) : (
                     <div className="nm-groupcard-prog">

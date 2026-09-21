@@ -34,13 +34,21 @@ class Subject(Base):
 
 
 class FileObject(Base):
-    """An uploaded blob in R2. Only the keys live in the database."""
+    """An uploaded blob in R2. Only the keys live in the database.
+
+    A file is personal (owner only) or group-scoped: group_id set means every
+    member of that group can preview it. Shared copies are separate rows and
+    keys, so deleting either copy never affects the other.
+    """
 
     __tablename__ = "files"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("groups.id", ondelete="CASCADE"), index=True
     )
     key: Mapped[str] = mapped_column(String(512), nullable=False)
     thumb_key: Mapped[str | None] = mapped_column(String(512))

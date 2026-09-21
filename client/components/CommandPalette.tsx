@@ -148,7 +148,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       id: `group.${group.id}`,
       label: group.name,
       icon: group.kind === "study" ? "fa-note-sticky" : "fa-users",
-      hint: `${group.kind === "study" ? "Study group" : "Project group"}${group.subject ? ` · ${group.subject}` : ""}`,
+      hint: `${group.kind === "study" ? "Study group" : "Project group"}${
+        group.kind === "project" && group.subject ? ` · ${group.subject}` : ""
+      }`,
       keywords: `group ${group.subject} ${group.name}`,
       run: go(`/groups/${group.id}`),
     }));

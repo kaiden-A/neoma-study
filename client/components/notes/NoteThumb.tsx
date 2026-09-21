@@ -7,7 +7,15 @@ import type { Note } from "@/lib/types";
 
 /** Resolves a short-lived presigned URL per render, like the prototype's
  * per-route object URLs. */
-export function NoteThumb({ note, alt }: { note: Note; alt: string }) {
+export function NoteThumb({
+  note,
+  alt,
+  className = "nm-notecard-thumb",
+}: {
+  note: Note;
+  alt: string;
+  className?: string;
+}) {
   const { fileUrl } = useStore();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -29,20 +37,20 @@ export function NoteThumb({ note, alt }: { note: Note; alt: string }) {
 
   if (!note.fileId || failed) {
     return (
-      <div className="nm-notecard-thumb">
+      <div className={className}>
         <i className="fa-solid fa-file nm-thumb-ph" aria-hidden="true" />
       </div>
     );
   }
   if (!url) {
     return (
-      <div className="nm-notecard-thumb">
+      <div className={className}>
         <i className="fa-solid fa-circle-notch fa-spin nm-thumb-ph" aria-hidden="true" />
       </div>
     );
   }
   return (
-    <div className="nm-notecard-thumb">
+    <div className={className}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={url} alt={alt} loading="lazy" />
     </div>

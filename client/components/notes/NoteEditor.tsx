@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EmptyState, MarkerChip } from "@/components/ui/bits";
-import { Modal } from "@/components/ui/Modal";
 import { Menu } from "@/components/ui/Menu";
 import { useOverlays } from "@/components/ui/Overlays";
+import { ShareToGroupModal } from "@/components/notes/ShareToGroupModal";
 import { fmtDateTime, fmtRelative } from "@/lib/dates";
 import { fmtBytes, parseTags } from "@/lib/files";
 import { noteType } from "@/lib/markers";
@@ -24,8 +24,6 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const [tags, setTags] = useState((note?.tags ?? []).join(", "));
   const [saved, setSaved] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [shareGroup, setShareGroup] = useState("");
-  const [shareTopic, setShareTopic] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileMissing, setFileMissing] = useState(false);
@@ -107,10 +105,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const group = note.groupId ? store.groupById(note.groupId) : null;
   const subject = note.subjectId ? store.subjectById(note.subjectId) : null;
   const isFile = Boolean(note.fileId);
-  const currentId = note.id;
   const words = body.trim() ? body.trim().split(/\s+/).length : 0;
-  const shareGroups = store.groups;
-  const shareGroupObj = shareGroup ? store.groupById(shareGroup) : null;
 
   async function remove() {
     if (!note) return;
@@ -126,23 +121,6 @@ export function NoteEditor({ noteId }: { noteId: string }) {
     await store.deleteNote(note.id);
     toast("Deleted", { kind: "info" });
     router.push(group ? `/groups/${group.id}?tab=notes` : "/vault");
-  }
-
-  async function share() {
-    if (!shareGroup) return;
-    try {
-      const copy = await store.shareNote(currentId, shareGroup, shareTopic || null);
-      setShareOpen(false);
-      toast(`Shared to ${store.groupById(shareGroup)?.name ?? "the group"}`, {
-        kind: "success",
-        icon: "fa-share-nodes",
-        actionLabel: "View",
-        onAction: () => router.push(`/groups/${shareGroup}?tab=notes`),
-      });
-      void copy;
-    } catch (caught) {
-      toast(caught instanceof Error ? caught.message : "Could not share that.", { kind: "danger" });
-    }
   }
 
   return (
@@ -379,75 +357,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
         />
       ) : null}
 
-      {shareOpen ? (
-        <Modal
-          title="Share to a group"
-          subtitle="This copies the note into the group’s shared notes. Study groups file it under a topic."
-          size="sm"
-          onClose={() => setShareOpen(false)}
-          footer={
-            <>
-              <div className="nm-spacer" />
-              <button type="button" className="nm-btn nm-btn--ghost" onClick={() => setShareOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="nm-btn nm-btn--primary" onClick={() => void share()} disabled={!shareGroup}>
-                Share
-              </button>
-            </>
-          }
-        >
-          {shareGroups.length === 0 ? (
-            <p className="nm-help">No groups to share with yet. Create a group first, then share notes into it.</p>
-          ) : (
-            <>
-              <div className="nm-field">
-                <label className="nm-label" htmlFor="share-group">
-                  Group
-                </label>
-                <select
-                  id="share-group"
-                  className="nm-select"
-                  value={shareGroup}
-                  onChange={(event) => {
-                    setShareGroup(event.target.value);
-                    setShareTopic("");
-                  }}
-                >
-                  <option value="">Pick a group…</option>
-                  {shareGroups.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                      {item.kind === "study" ? " · study group" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {shareGroupObj && shareGroupObj.topics.length ? (
-                <div className="nm-field">
-                  <label className="nm-label" htmlFor="share-topic">
-                    Topic
-                  </label>
-                  <select
-                    id="share-topic"
-                    className="nm-select"
-                    value={shareTopic}
-                    onChange={(event) => setShareTopic(event.target.value)}
-                  >
-                    <option value="">General</option>
-                    {shareGroupObj.topics.map((topic) => (
-                      <option key={topic.id} value={topic.id}>
-                        {topic.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-              <p className="nm-help">Edits after sharing are separate — your copy stays yours.</p>
-            </>
-          )}
-        </Modal>
-      ) : null}
+      {shareOpen ? <ShareToGroupModal note={note} onClose={() => setShareOpen(false)} /> : null}
     </div>
   );
 }

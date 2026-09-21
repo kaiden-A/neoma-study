@@ -64,6 +64,19 @@ class Storage:
         with contextlib.suppress(BotoCoreError, ClientError):
             self.client().delete_object(Bucket=self.bucket, Key=key)
 
+    def copy(self, source_key: str, dest_key: str) -> None:
+        """Server-side copy, so sharing a note never re-uploads its bytes."""
+        if not self.configured:
+            raise UnavailableError("File storage is not configured.")
+        try:
+            self.client().copy_object(
+                Bucket=self.bucket,
+                CopySource={"Bucket": self.bucket, "Key": source_key},
+                Key=dest_key,
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise StorageError("Could not copy that file.") from exc
+
     def presigned_get(self, key: str) -> str:
         if not self.configured:
             raise UnavailableError("File storage is not configured.")

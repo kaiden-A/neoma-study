@@ -93,7 +93,7 @@ export default function JoinPage() {
               <i className={`fa-solid ${isStudy ? "fa-note-sticky" : "fa-list-check"}`} aria-hidden="true" />
               {isStudy ? "Study group" : "Project group"}
             </span>
-            {preview.subject ? (
+            {!isStudy && preview.subject ? (
               <span className={`nm-chip nm-chip--sm nm-chip--mark nm-mk-${preview.color}`}>
                 <span className="nm-dot" />
                 {preview.subject}
@@ -114,10 +114,10 @@ export default function JoinPage() {
               ? [
                   {
                     icon: "fa-note-sticky",
-                    title: "Shared notes by topic",
+                    title: "Shared notes by subject",
                     body: preview.topics.length
-                      ? `Everyone files what they have under ${preview.topics.map((topic) => topic.name).join(", ")}.`
-                      : "Everyone files what they have under the group topics.",
+                      ? `Everyone posts notes and files under ${preview.topics.map((topic) => topic.name).join(", ")}.`
+                      : "Everyone posts notes and files under the group’s subjects.",
                   },
                   {
                     icon: "fa-circle-question",

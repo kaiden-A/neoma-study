@@ -93,7 +93,10 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   Invite emails go out through `services/email_services.py` (Resend).
 - Tasks: `services/task_services.py`. Personal to-dos are `group_id IS NULL`.
 - Notes/files: `services/note_services.py` + `services/storage_services.py` (R2).
-  Sharing copies text into a group note; files never leave personal scope.
+  Files are personal (owner) or group-scoped (`files.group_id`): group files are
+  readable by members, attachments are copied on share (`Storage.copy`) so each
+  copy is independent, and deleting a note/group purges its blobs. Access rules
+  live in `services/file_services.py`. Sharing copies text into a group note.
 - Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.
 - Notifications are derived, never stored: `services/notification_services.py`
   (keys like `overdue:{task}`, `due:{task}:{lead}`); only read/snooze state persists.

@@ -967,6 +967,21 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-composer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .nm-composer-topic { margin-top: 4px; }
 .nm-composer-topic .nm-field { margin-bottom: 0; max-width: 280px; }
+.nm-attach {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--muted-bg); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 7px 10px; font-size: 0.82rem;
+}
+.nm-attach-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nm-attach .nm-iconbtn { margin-left: auto; }
+.nm-notefeed-file { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+.nm-notefeed-file-thumb {
+  width: 72px; height: 54px; flex: 0 0 auto;
+  display: grid; place-items: center; overflow: hidden;
+  background: var(--muted-bg); border: 1px solid var(--rule); border-radius: 8px;
+}
+.nm-notefeed-file-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.nm-notefeed-file-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
 
 /* study groups: topic filter + note requests */
 .nm-topicbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -1016,7 +1031,7 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-subrow .nm-check { flex: 1 1 auto; }
 
 /* ---------- 14. notes ---------- */
-.nm-vault-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 24px; align-items: start; }
+.nm-vault-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 24px; align-items: start; margin-bottom: 14px; }
 .nm-vault-side { position: sticky; top: 74px; }
 .nm-vault-nav { display: flex; flex-direction: column; gap: 2px; }
 .nm-folders {

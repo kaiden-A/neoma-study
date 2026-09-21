@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { NoteThumb } from "@/components/notes/NoteThumb";
+import { ShareToGroupModal } from "@/components/notes/ShareToGroupModal";
 import { MarkerChip } from "@/components/ui/bits";
 import { Menu } from "@/components/ui/Menu";
 import { fmtRelative, truncate } from "@/lib/dates";
@@ -21,6 +22,7 @@ export function NoteCard({
 }) {
   const store = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const type = noteType(note.type);
   const group = note.groupId ? store.groupById(note.groupId) : null;
   const subject = note.subjectId ? store.subjectById(note.subjectId) : null;
@@ -97,6 +99,7 @@ export function NoteCard({
                 void store.updateNote(note.id, { pinned: !note.pinned }).then(() => onChanged?.());
               },
             },
+            { label: "Share to group", icon: "fa-share-nodes", onSelect: () => setShareOpen(true) },
             { separator: true },
             {
               label: "Delete",
@@ -109,6 +112,8 @@ export function NoteCard({
           ]}
         />
       ) : null}
+
+      {shareOpen ? <ShareToGroupModal note={note} onClose={() => setShareOpen(false)} /> : null}
     </article>
   );
 }

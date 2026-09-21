@@ -1,9 +1,10 @@
 """Notes, subjects, file objects and the request/answer flow.
 
 Personal notes belong to a person; group notes belong to a group and are
-visible to its members. Sharing copies the text into a new group note (files
-never leave personal scope, exactly like the prototype). Answering a request
-creates the answer note and closes the request in one service call.
+visible to its members. Sharing copies the text into a new group note; a file
+attachment is copied too (server-side), so the personal copy and the group copy
+are independent blobs. Answering a request creates the answer note and closes
+the request in one service call.
 """
 
 import uuid
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..models import FileObject, GroupMember, GroupTopic, Note, NoteScope, NoteType, Subject, User, utcnow
 from ..schemas.notes import AnswerRequest, GroupNoteCreate, NoteCreate, NoteOut, NotePatch, RequestOut
 from ..utils import domain_of, to_ms
-from . import access, storage_services
+from . import access, file_services, storage_services
 from .errors import InvalidError, NotFoundError
 
 MISSING_NOTE = "That item is gone."
@@ -147,19 +148,6 @@ def _require_topic(db: DbSession, group_id: uuid.UUID | None, topic_id: str | No
     return topic_uuid
 
 
-def _require_file(db: DbSession, user: User, file_id: str | None) -> uuid.UUID | None:
-    if not file_id:
-        return None
-    try:
-        file_uuid = uuid.UUID(file_id)
-    except ValueError as exc:
-        raise InvalidError("That file id is not valid.") from exc
-    file = db.get(FileObject, file_uuid)
-    if file is None or file.owner_id != user.id:
-        raise NotFoundError("That file is gone.")
-    return file_uuid
-
-
 def _validate_link(url: str | None) -> str | None:
     if not url:
         return None
@@ -180,7 +168,7 @@ def create_personal_note(db: DbSession, user: User, data: NoteCreate) -> NoteOut
         title=title[:300],
         body=data.body,
         url=url,
-        file_id=_require_file(db, user, data.fileId),
+        file_id=file_services.require_attachable_file(db, user, data.fileId, None),
         pinned=data.pinned,
         tags=_clean_tags(data.tags),
         created_by=user.id,
@@ -206,6 +194,7 @@ def create_group_note(db: DbSession, user: User, group_id: uuid.UUID, data: Grou
         title=title[:300],
         body=data.body,
         url=url,
+        file_id=file_services.require_attachable_file(db, user, data.fileId, group.id),
         tags=_clean_tags(data.tags),
         request_open=True if is_request else None,
         created_by=user.id,
@@ -244,16 +233,23 @@ def delete_note(db: DbSession, user: User, note_id: uuid.UUID, storage: storage_
     note = require_note(db, user, note_id)
     if note.file_id:
         file = db.get(FileObject, note.file_id)
-        if file is not None and file.owner_id == user.id:
-            storage.delete(file.key)
-            storage.delete(file.thumb_key)
-            db.delete(file)
+        # A personal attachment only ever leaves with its owner; a group
+        # attachment leaves with the note, for any member.
+        if file is not None and (file.owner_id == user.id or file.group_id is not None):
+            file_services.purge_attached_file(db, storage, file, note.id)
     db.delete(note)
     db.commit()
 
 
 def share_to_group(
-    db: DbSession, user: User, note_id: uuid.UUID, group_id: str, topic_id: str | None
+    db: DbSession,
+    user: User,
+    note_id: uuid.UUID,
+    group_id: str,
+    topic_id: str | None,
+    *,
+    storage: storage_services.Storage,
+    include_file: bool = True,
 ) -> NoteOut:
     note = require_note(db, user, note_id)
     try:
@@ -276,9 +272,42 @@ def share_to_group(
         created_by=user.id,
     )
     db.add(copy)
+    db.flush()
+    if include_file and note.file_id:
+        source = db.get(FileObject, note.file_id)
+        if source is not None:
+            copy.file_id = _copy_file_to_group(db, storage, group.id, source, user).id
     db.commit()
     db.refresh(copy)
     return note_out(db, copy)
+
+
+def _copy_file_to_group(
+    db: DbSession,
+    storage: storage_services.Storage,
+    group_id: uuid.UUID,
+    source: FileObject,
+    user: User,
+) -> FileObject:
+    """Copies the blob so the shared copy outlives the original note."""
+    copy = FileObject(
+        owner_id=user.id,
+        group_id=group_id,
+        key="",
+        name=source.name,
+        content_type=source.content_type,
+        size=source.size,
+    )
+    db.add(copy)
+    db.flush()
+    key = f"groups/{group_id}/{copy.id}"
+    copy.key = key
+    storage.copy(source.key, key)
+    if source.thumb_key:
+        thumb_key = f"{key}-thumb"
+        storage.copy(source.thumb_key, thumb_key)
+        copy.thumb_key = thumb_key
+    return copy
 
 
 def answer_request(db: DbSession, user: User, note_id: uuid.UUID, answer: AnswerRequest) -> NoteOut:

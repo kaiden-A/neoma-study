@@ -42,6 +42,7 @@ export interface GroupStats {
 
 export interface StudyStats {
   notes: number;
+  files: number;
   openRequests: number;
   topicCount: number;
   nextSession: CalendarEvent | null;
@@ -141,12 +142,12 @@ interface StoreValue {
   createGroupNote: (groupId: string, input: GroupNoteInput) => Promise<Note>;
   updateNote: (id: string, patch: NotePatchInput) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
-  shareNote: (id: string, groupId: string, topicId: string | null) => Promise<Note>;
+  shareNote: (id: string, groupId: string, topicId: string | null, includeFile?: boolean) => Promise<Note>;
   answerRequest: (id: string, answer: AnswerInput) => Promise<Note>;
   createSubject: (name: string) => Promise<Subject>;
   updateSubject: (id: string, patch: { name?: string; color?: string }) => Promise<Subject>;
   deleteSubject: (id: string, moveTo?: string | null) => Promise<void>;
-  uploadFile: (file: Blob, name: string, thumb?: Blob | null) => Promise<FileOut>;
+  uploadFile: (file: Blob, name: string, thumb?: Blob | null, groupId?: string | null) => Promise<FileOut>;
   fileUrl: (id: string, thumb?: boolean) => Promise<string>;
   createEvent: (input: EventCreateInput) => Promise<CalendarEvent>;
   updateEvent: (id: string, patch: EventPatchInput) => Promise<CalendarEvent>;
@@ -290,6 +291,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           .sort((a, b) => a.startsAt - b.startsAt)[0] ?? null;
       return {
         notes: groupNotes.filter((note) => note.type !== "request").length,
+        files: groupNotes.filter((note) => note.fileId !== null).length,
         openRequests: groupNotes.filter((note) => note.type === "request" && note.request?.open).length,
         topicCount: groupById(groupId)?.topics.length ?? 0,
         nextSession,
@@ -512,8 +514,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await apiDelete(`/api/notes/${id}`);
         setNotes((current) => current.filter((note) => note.id !== id));
       },
-      shareNote: async (id, groupId, topicId) => {
-        const note = await apiPost<Note>(`/api/notes/${id}/share`, { groupId, topicId });
+      shareNote: async (id, groupId, topicId, includeFile = true) => {
+        const note = await apiPost<Note>(`/api/notes/${id}/share`, {
+          groupId,
+          topicId,
+          includeFile,
+        });
         replaceNote(note);
         return note;
       },
@@ -557,10 +563,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ),
         );
       },
-      uploadFile: async (file, name, thumb = null) => {
+      uploadFile: async (file, name, thumb = null, groupId = null) => {
         const form = new FormData();
         form.append("file", file, name);
         if (thumb) form.append("thumb", thumb, `${name}.thumb.jpg`);
+        if (groupId) form.append("groupId", groupId);
         return apiUpload<FileOut>("/api/files", form);
       },
       fileUrl: async (id, thumb = false) => {

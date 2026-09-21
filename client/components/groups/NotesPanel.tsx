@@ -1,30 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { NoteThumb } from "@/components/notes/NoteThumb";
 import { Avatar, EmptyState, MarkerChip } from "@/components/ui/bits";
 import { Modal } from "@/components/ui/Modal";
 import { Menu } from "@/components/ui/Menu";
 import { useOverlays } from "@/components/ui/Overlays";
 import { domainOf, fmtRelative } from "@/lib/dates";
+import { MAX_FILE_BYTES, compressImage, fmtBytes, typeFromFile } from "@/lib/files";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
-import type { Group, Note } from "@/lib/types";
+import type { Group, Note, NoteType } from "@/lib/types";
 
-type NoteView = { topic: "all" | "general" | string };
+type NoteView = "all" | "general" | string;
 
 export function NotesPanel({ group }: { group: Group }) {
   const store = useStore();
   const router = useRouter();
   const { toast, confirm } = useOverlays();
-  const [topic, setTopic] = useState<NoteView["topic"]>("all");
+  const [topic, setTopic] = useState<NoteView>("all");
   const [requestMode, setRequestMode] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [fileDraft, setFileDraft] = useState<{ id: string; name: string; type: NoteType } | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [composerTopic, setComposerTopic] = useState("");
   const [answerTarget, setAnswerTarget] = useState<Note | null>(null);
   const [answerUrl, setAnswerUrl] = useState("");
@@ -37,12 +41,21 @@ export function NotesPanel({ group }: { group: Group }) {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [linkDraft, setLinkDraft] = useState({ label: "", url: "" });
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const notes = store.notesForGroup(group.id);
+  const isStudy = group.kind === "study";
+  // A subject may have been removed while the panel was open.
+  const activeTopic: NoteView =
+    topic === "general"
+      ? "general"
+      : topic !== "all" && group.topics.some((item) => item.id === topic)
+        ? topic
+        : "all";
   const filtered = notes.filter((note) => {
-    if (topic === "all") return true;
-    if (topic === "general") return !note.topicId;
-    return note.topicId === topic;
+    if (activeTopic === "all") return true;
+    if (activeTopic === "general") return !note.topicId;
+    return note.topicId === activeTopic;
   });
   const sorted = [...filtered].sort((a, b) => {
     const aOpen = a.type === "request" && a.request?.open ? 1 : 0;
@@ -50,25 +63,57 @@ export function NotesPanel({ group }: { group: Group }) {
     if (aOpen !== bOpen) return bOpen - aOpen;
     return b.createdAt - a.createdAt;
   });
-  const isStudy = group.kind === "study";
+
+  async function attachFile(picked: File | null) {
+    if (!picked) return;
+    if (picked.size > MAX_FILE_BYTES) {
+      toast("That file is over 15 MB", {
+        kind: "danger",
+        body: "Keep big decks in Drive and post a link instead.",
+      });
+      return;
+    }
+    setUploading(true);
+    try {
+      const prepared = picked.type.startsWith("image/")
+        ? await compressImage(picked)
+        : { full: picked, thumb: null };
+      const upload = await store.uploadFile(prepared.full, picked.name, prepared.thumb, group.id);
+      setFileDraft({ id: upload.id, name: upload.name, type: typeFromFile(picked) });
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not attach that file.", { kind: "danger" });
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
 
   async function publish() {
     const isRequest = requestMode;
-    if (!title.trim() && !body.trim() && !linkUrl.trim()) return;
+    if (!title.trim() && !body.trim() && !linkUrl.trim() && !fileDraft) return;
     if (isRequest && !title.trim()) {
       toast("Say what you are looking for", { kind: "danger" });
       return;
     }
     const isLink = !isRequest && linkOpen && linkUrl.trim();
     const finalTitle =
-      title.trim() || (isLink ? linkLabel.trim() || domainOf(linkUrl.trim()) : body.trim().slice(0, 48));
+      title.trim() ||
+      (isLink
+        ? linkLabel.trim() || domainOf(linkUrl.trim())
+        : fileDraft
+          ? fileDraft.name
+          : body.trim().slice(0, 48));
+    const postType: NoteType = isRequest ? "request" : isLink ? "link" : fileDraft ? fileDraft.type : "note";
+    const postTopicId =
+      isStudy && (activeTopic === "all" || activeTopic === "general") ? null : isStudy ? activeTopic : composerTopic || null;
     try {
       await store.createGroupNote(group.id, {
-        type: isRequest ? "request" : isLink ? "link" : "note",
+        type: postType,
         title: finalTitle,
         body: body.trim(),
         url: isLink ? linkUrl.trim() : null,
-        topicId: composerTopic || null,
+        topicId: postTopicId,
+        fileId: fileDraft?.id ?? null,
       });
       setTitle("");
       setBody("");
@@ -76,6 +121,7 @@ export function NotesPanel({ group }: { group: Group }) {
       setLinkUrl("");
       setLinkOpen(false);
       setRequestMode(false);
+      setFileDraft(null);
       toast(isRequest ? "Request posted — the group can answer it" : `Posted to ${group.name}`, {
         kind: "success",
         icon: isRequest ? "fa-circle-question" : "fa-paper-plane",
@@ -140,298 +186,308 @@ export function NotesPanel({ group }: { group: Group }) {
     }
   }
 
-  return (
-    <>
-      <div className="nm-toolbar">
-        <span className="nm-mono nm-meta">
-          {group.topics.length
-            ? `${group.topics.length} topic${group.topics.length === 1 ? "" : "s"}`
-            : isStudy
-              ? "No topics yet — add the units you trade notes from"
-              : "No topics yet"}
-        </span>
-        <div className="nm-toolbar-spacer" />
-        <button type="button" className="nm-btn nm-btn--ghost nm-btn--sm" onClick={() => setTopicManager(true)}>
-          <i className={`fa-solid ${group.topics.length ? "fa-sliders" : "fa-plus"}`} aria-hidden="true" />
-          {group.topics.length ? "Manage topics" : "Add topics"}
-        </button>
-      </div>
-
-      {group.topics.length ? (
-        <div className="nm-filterchips nm-topicbar">
-          <button
-            type="button"
-            className={`nm-chip nm-chip--sm nm-chip--link${topic === "all" ? " is-active" : ""}`}
-            onClick={() => setTopic("all")}
-          >
-            All<span className="nm-mono">{notes.length}</span>
-          </button>
-          {group.topics.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`nm-chip nm-chip--sm nm-chip--link nm-mk-${item.color}${topic === item.id ? " is-active" : ""}`}
-              onClick={() => setTopic(item.id)}
-            >
-              {item.name}
-              <span className="nm-mono">{notes.filter((note) => note.topicId === item.id).length}</span>
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`nm-chip nm-chip--sm nm-chip--link${topic === "general" ? " is-active" : ""}`}
-            onClick={() => setTopic("general")}
-          >
-            General<span className="nm-mono">{notes.filter((note) => !note.topicId).length}</span>
-          </button>
-        </div>
-      ) : null}
-
-      <div className={`nm-card${isStudy ? " nm-composer--study" : ""}`}>
-        <div className="nm-card-bd">
-          <div className="nm-composer">
-            <input
-              className="nm-input nm-composer-title"
-              placeholder={requestMode ? "Title — what are you after?" : "Title (optional)"}
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-            <textarea
-              className="nm-textarea"
-              rows={3}
-              placeholder={
-                requestMode
-                  ? "Add the detail — which lecture, which week, what you can trade."
-                  : isStudy
-                    ? "What did you find useful? Paste the summary, the method, the link."
-                    : "Minutes, decisions, what changed…"
+  const composer = (
+    <div className={`nm-card${isStudy ? " nm-composer--study" : ""}`}>
+      <div className="nm-card-bd">
+        <div className="nm-composer">
+          <input
+            className="nm-input nm-composer-title"
+            placeholder={requestMode ? "Title — what are you after?" : "Title (optional)"}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+          <textarea
+            className="nm-textarea"
+            rows={3}
+            placeholder={
+              requestMode
+                ? "Add the detail — which lecture, which week, what you can trade."
+                : isStudy
+                  ? "What did you find useful? Paste the summary, the method, the link."
+                  : "Minutes, decisions, what changed…"
+            }
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                void publish();
               }
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  void publish();
-                }
-              }}
-            />
-            {linkOpen ? (
-              <div className="nm-composer-link">
-                <input
-                  className="nm-input"
-                  placeholder="Link label"
-                  value={linkLabel}
-                  onChange={(event) => setLinkLabel(event.target.value)}
-                />
-                <input
-                  className="nm-input"
-                  placeholder="https://…"
-                  value={linkUrl}
-                  onChange={(event) => setLinkUrl(event.target.value)}
-                />
-              </div>
-            ) : null}
-            <div className="nm-composer-actions">
+            }}
+          />
+          {linkOpen ? (
+            <div className="nm-composer-link">
+              <input
+                className="nm-input"
+                placeholder="Link label"
+                value={linkLabel}
+                onChange={(event) => setLinkLabel(event.target.value)}
+              />
+              <input
+                className="nm-input"
+                placeholder="https://…"
+                value={linkUrl}
+                onChange={(event) => setLinkUrl(event.target.value)}
+              />
+            </div>
+          ) : null}
+          {fileDraft ? (
+            <div className="nm-attach">
+              <i className="fa-solid fa-paperclip" aria-hidden="true" />
+              <span className="nm-attach-name">{fileDraft.name}</span>
               <button
                 type="button"
-                className={`nm-btn nm-btn--ghost nm-btn--sm${requestMode ? " is-active" : ""}`}
-                onClick={() => setRequestMode((current) => !current)}
+                className="nm-iconbtn nm-iconbtn--sm"
+                aria-label="Remove attachment"
+                onClick={() => setFileDraft(null)}
               >
-                <i className="fa-solid fa-circle-question" aria-hidden="true" />
-                {requestMode ? "Request mode on" : "Ask for a note"}
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
               </button>
+            </div>
+          ) : null}
+          <div className="nm-composer-actions">
+            <button
+              type="button"
+              className={`nm-btn nm-btn--ghost nm-btn--sm${requestMode ? " is-active" : ""}`}
+              onClick={() => setRequestMode((current) => !current)}
+            >
+              <i className="fa-solid fa-circle-question" aria-hidden="true" />
+              {requestMode ? "Request mode on" : "Ask for a note"}
+            </button>
+            <button
+              type="button"
+              className="nm-btn nm-btn--ghost nm-btn--sm"
+              onClick={() => setLinkOpen((current) => !current)}
+            >
+              <i className="fa-solid fa-link" aria-hidden="true" />
+              Include a link
+            </button>
+            {!requestMode ? (
               <button
                 type="button"
                 className="nm-btn nm-btn--ghost nm-btn--sm"
-                onClick={() => setLinkOpen((current) => !current)}
+                onClick={() => fileInput.current?.click()}
+                disabled={uploading}
               >
-                <i className="fa-solid fa-link" aria-hidden="true" />
-                Include a link
+                <i className={`fa-solid ${uploading ? "fa-circle-notch fa-spin" : "fa-paperclip"}`} aria-hidden="true" />
+                {uploading ? "Uploading…" : "Attach a file"}
               </button>
-              <div className="nm-spacer" />
-              <button type="button" className="nm-btn nm-btn--primary nm-btn--sm" onClick={() => void publish()}>
-                <i className={`fa-solid ${requestMode ? "fa-circle-question" : "fa-paper-plane"}`} aria-hidden="true" />
-                {requestMode ? "Post request" : "Post to group"}
-              </button>
-            </div>
-            {group.topics.length ? (
-              <div className="nm-composer-topic">
-                <div className="nm-field">
-                  <label className="nm-label" htmlFor="np-topic">
-                    Topic
-                  </label>
-                  <select
-                    id="np-topic"
-                    className="nm-select"
-                    value={composerTopic}
-                    onChange={(event) => setComposerTopic(event.target.value)}
-                  >
-                    <option value="">General</option>
-                    {group.topics.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
             ) : null}
+            <input
+              ref={fileInput}
+              type="file"
+              className="nm-sr"
+              accept="image/*,.pdf,.ppt,.pptx,.key,.doc,.docx,.txt"
+              onChange={(event) => void attachFile(event.target.files?.[0] ?? null)}
+            />
+            <div className="nm-spacer" />
+            <button type="button" className="nm-btn nm-btn--primary nm-btn--sm" onClick={() => void publish()}>
+              <i className={`fa-solid ${requestMode ? "fa-circle-question" : "fa-paper-plane"}`} aria-hidden="true" />
+              {requestMode ? "Post request" : "Post to group"}
+            </button>
           </div>
+          {!isStudy && group.topics.length ? (
+            <div className="nm-composer-topic">
+              <div className="nm-field">
+                <label className="nm-label" htmlFor="np-topic">
+                  Topic
+                </label>
+                <select
+                  id="np-topic"
+                  className="nm-select"
+                  value={composerTopic}
+                  onChange={(event) => setComposerTopic(event.target.value)}
+                >
+                  <option value="">General</option>
+                  {group.topics.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
+    </div>
+  );
 
-      {sorted.length === 0 ? (
-        <EmptyState
-          icon="fa-note-sticky"
-          title={topic === "all" ? "Nothing shared yet" : "Nothing under this topic yet"}
-          body={
-            isStudy
-              ? "Share what you have — a summary, a photo, a link — or ask the group for what they are missing."
-              : "Post minutes, decisions or a link to the shared drive. Everyone in the group sees it."
-          }
-        />
-      ) : (
-        <div className="nm-notefeed">
-          {sorted.map((note) => {
-            const type = noteType(note.type);
-            const author = store.userById(note.createdBy ?? "");
-            const isRequest = note.type === "request";
-            const topicInfo = note.topicId ? group.topics.find((item) => item.id === note.topicId) : null;
-            return (
-              <article className={`nm-notefeed-item nm-mk-${type.marker}${isRequest ? " nm-request" : ""}${isRequest && note.request?.open ? " is-open" : ""}`} key={note.id}>
-                <span className="nm-notefeed-icon">
-                  <i className={`fa-solid ${type.icon}`} aria-hidden="true" />
-                </span>
-                <div className="nm-notefeed-bd">
-                  <div className="nm-notefeed-top">
-                    {author ? <Avatar name={author.name} email={author.email} color={author.color} size={22} /> : null}
-                    <span className="nm-notefeed-author">{author?.name ?? "Someone"}</span>
-                    <span className="nm-mono">{fmtRelative(note.createdAt)}</span>
-                    {topicInfo ? <MarkerChip name={topicInfo.name} markerKey={topicInfo.color} small /> : null}
-                    {isRequest ? (
-                      note.request?.open ? (
-                        <span className="nm-chip nm-chip--sm nm-chip--warn">
-                          <i className="fa-solid fa-hourglass-half" aria-hidden="true" />
-                          Waiting
-                        </span>
-                      ) : (
-                        <span className="nm-chip nm-chip--sm nm-chip--ok">
-                          <i className="fa-solid fa-check" aria-hidden="true" />
-                          Answered
-                        </span>
-                      )
-                    ) : null}
-                    {note.type === "link" && note.url ? (
-                      <a className="nm-notefeed-open nm-link" href={note.url} target="_blank" rel="noopener">
-                        Open link
-                      </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="nm-iconbtn nm-iconbtn--sm"
-                      aria-label="Note actions"
-                      onClick={() => setMenuFor(note)}
-                    >
-                      <i className="fa-solid fa-ellipsis" aria-hidden="true" />
-                    </button>
-                  </div>
-                  <h3 className="nm-notefeed-title">{note.title}</h3>
-                  {note.body ? <p className="nm-notefeed-body">{note.body}</p> : null}
-                  {isRequest && note.request?.open ? (
-                    <div className="nm-request-actions">
-                      <button
-                        type="button"
-                        className="nm-btn nm-btn--primary nm-btn--sm"
-                        onClick={() => setAnswerTarget(note)}
-                      >
-                        <i className="fa-solid fa-share-nodes" aria-hidden="true" />
-                        Answer with a link
-                      </button>
-                    </div>
+  const feed =
+    sorted.length === 0 ? (
+      <EmptyState
+        icon="fa-note-sticky"
+        title={activeTopic === "all" ? "Nothing shared yet" : "Nothing under this subject yet"}
+        body={
+          isStudy
+            ? "Share what you have — a summary, a photo, a file — or ask the group for what they are missing."
+            : "Post minutes, decisions or a link to the shared drive. Everyone in the group sees it."
+        }
+      />
+    ) : (
+      <div className="nm-notefeed">
+        {sorted.map((note) => {
+          const type = noteType(note.type);
+          const author = store.userById(note.createdBy ?? "");
+          const isRequest = note.type === "request";
+          const topicInfo = note.topicId ? group.topics.find((item) => item.id === note.topicId) : null;
+          return (
+            <article className={`nm-notefeed-item nm-mk-${type.marker}${isRequest ? " nm-request" : ""}${isRequest && note.request?.open ? " is-open" : ""}`} key={note.id}>
+              <span className="nm-notefeed-icon">
+                <i className={`fa-solid ${type.icon}`} aria-hidden="true" />
+              </span>
+              <div className="nm-notefeed-bd">
+                <div className="nm-notefeed-top">
+                  {author ? <Avatar name={author.name} email={author.email} color={author.color} size={22} /> : null}
+                  <span className="nm-notefeed-author">{author?.name ?? "Someone"}</span>
+                  <span className="nm-mono">{fmtRelative(note.createdAt)}</span>
+                  {topicInfo ? <MarkerChip name={topicInfo.name} markerKey={topicInfo.color} small /> : null}
+                  {isRequest ? (
+                    note.request?.open ? (
+                      <span className="nm-chip nm-chip--sm nm-chip--warn">
+                        <i className="fa-solid fa-hourglass-half" aria-hidden="true" />
+                        Waiting
+                      </span>
+                    ) : (
+                      <span className="nm-chip nm-chip--sm nm-chip--ok">
+                        <i className="fa-solid fa-check" aria-hidden="true" />
+                        Answered
+                      </span>
+                    )
                   ) : null}
-                  {isRequest && !note.request?.open ? (
-                    <div className="nm-request-answer">
-                      <i className="fa-solid fa-check" aria-hidden="true" />
-                      Answered by {store.userName(note.request?.answeredBy)}
-                      {note.request?.answerNoteId ? (
-                        <>
-                          {" · "}
-                          <a className="nm-link" href={`/vault/${note.request.answerNoteId}`}>
-                            {store.noteById(note.request.answerNoteId)?.title ?? "the answer"}
-                          </a>
-                        </>
-                      ) : null}
-                    </div>
+                  {note.type === "link" && note.url ? (
+                    <a className="nm-notefeed-open nm-link" href={note.url} target="_blank" rel="noopener">
+                      Open link
+                    </a>
                   ) : null}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="nm-card">
-        <div className="nm-card-hd">
-          <h2 className="nm-card-title">Group links</h2>
-          <span className="nm-card-actions">briefs, drives, references</span>
-        </div>
-        <div className="nm-card-bd">
-          {group.links.length ? (
-            <div className="nm-linklist">
-              {group.links.map((link) => (
-                <div className="nm-linkrow" key={link.id}>
-                  <i className="fa-solid fa-link" aria-hidden="true" />
-                  <a className="nm-linkrow-label" href={link.url} target="_blank" rel="noopener">
-                    {link.label}
-                  </a>
-                  <span className="nm-linkrow-url nm-mono">{domainOf(link.url)}</span>
                   <button
                     type="button"
                     className="nm-iconbtn nm-iconbtn--sm"
-                    aria-label="Remove link"
-                    onClick={() => void store.removeGroupLink(group.id, link.id)}
+                    aria-label="Note actions"
+                    onClick={() => setMenuFor(note)}
                   >
-                    <i className="fa-solid fa-xmark" aria-hidden="true" />
+                    <i className="fa-solid fa-ellipsis" aria-hidden="true" />
                   </button>
                 </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="nm-inline-add">
-            <input
-              className="nm-input"
-              placeholder="Label"
-              value={linkDraft.label}
-              onChange={(event) => setLinkDraft((current) => ({ ...current, label: event.target.value }))}
-            />
-            <input
-              className="nm-input"
-              placeholder="https://…"
-              value={linkDraft.url}
-              onChange={(event) => setLinkDraft((current) => ({ ...current, url: event.target.value }))}
-            />
-            <button
-              type="button"
-              className="nm-btn nm-btn--secondary"
-              onClick={() => {
-                if (!linkDraft.url.trim()) return;
-                void store
-                  .addGroupLink(group.id, linkDraft.label.trim(), linkDraft.url.trim())
-                  .then(() => {
-                    setLinkDraft({ label: "", url: "" });
-                    toast("Link attached", { kind: "success", icon: "fa-link" });
-                  })
-                  .catch((caught: unknown) =>
-                    toast(caught instanceof Error ? caught.message : "Could not attach that.", { kind: "danger" }),
-                  );
-              }}
-            >
-              Attach
-            </button>
+                <h3 className="nm-notefeed-title">{note.title}</h3>
+                {note.body ? <p className="nm-notefeed-body">{note.body}</p> : null}
+                {note.fileId ? (
+                  <div className="nm-notefeed-file">
+                    <NoteThumb note={note} alt={`Preview of ${note.title}`} className="nm-notefeed-file-thumb" />
+                    <div className="nm-notefeed-file-meta">
+                      <span className="nm-mono nm-meta">
+                        {note.fileName ?? "file"}
+                        {note.fileSize ? ` · ${fmtBytes(note.fileSize)}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        className="nm-link"
+                        onClick={() => router.push(`/vault/${note.id}`)}
+                      >
+                        Open file
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {isRequest && note.request?.open ? (
+                  <div className="nm-request-actions">
+                    <button
+                      type="button"
+                      className="nm-btn nm-btn--primary nm-btn--sm"
+                      onClick={() => setAnswerTarget(note)}
+                    >
+                      <i className="fa-solid fa-share-nodes" aria-hidden="true" />
+                      Answer with a link
+                    </button>
+                  </div>
+                ) : null}
+                {isRequest && !note.request?.open ? (
+                  <div className="nm-request-answer">
+                    <i className="fa-solid fa-check" aria-hidden="true" />
+                    Answered by {store.userName(note.request?.answeredBy)}
+                    {note.request?.answerNoteId ? (
+                      <>
+                        {" · "}
+                        <a className="nm-link" href={`/vault/${note.request.answerNoteId}`}>
+                          {store.noteById(note.request.answerNoteId)?.title ?? "the answer"}
+                        </a>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+
+  const groupLinks = (
+    <div className="nm-card">
+      <div className="nm-card-hd">
+        <h2 className="nm-card-title">Group links</h2>
+        <span className="nm-card-actions">briefs, drives, references</span>
+      </div>
+      <div className="nm-card-bd">
+        {group.links.length ? (
+          <div className="nm-linklist">
+            {group.links.map((link) => (
+              <div className="nm-linkrow" key={link.id}>
+                <i className="fa-solid fa-link" aria-hidden="true" />
+                <a className="nm-linkrow-label" href={link.url} target="_blank" rel="noopener">
+                  {link.label}
+                </a>
+                <span className="nm-linkrow-url nm-mono">{domainOf(link.url)}</span>
+                <button
+                  type="button"
+                  className="nm-iconbtn nm-iconbtn--sm"
+                  aria-label="Remove link"
+                  onClick={() => void store.removeGroupLink(group.id, link.id)}
+                >
+                  <i className="fa-solid fa-xmark" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
           </div>
+        ) : null}
+        <div className="nm-inline-add">
+          <input
+            className="nm-input"
+            placeholder="Label"
+            value={linkDraft.label}
+            onChange={(event) => setLinkDraft((current) => ({ ...current, label: event.target.value }))}
+          />
+          <input
+            className="nm-input"
+            placeholder="https://…"
+            value={linkDraft.url}
+            onChange={(event) => setLinkDraft((current) => ({ ...current, url: event.target.value }))}
+          />
+          <button
+            type="button"
+            className="nm-btn nm-btn--secondary"
+            onClick={() => {
+              if (!linkDraft.url.trim()) return;
+              void store
+                .addGroupLink(group.id, linkDraft.label.trim(), linkDraft.url.trim())
+                .then(() => {
+                  setLinkDraft({ label: "", url: "" });
+                  toast("Link attached", { kind: "success", icon: "fa-link" });
+                })
+                .catch((caught: unknown) =>
+                  toast(caught instanceof Error ? caught.message : "Could not attach that.", { kind: "danger" }),
+                );
+            }}
+          >
+            Attach
+          </button>
         </div>
       </div>
+    </div>
+  );
 
+  const modals = (
+    <>
       {answerTarget ? (
         <Modal
           title={`Answer “${answerTarget.title}”`}
@@ -535,8 +591,12 @@ export function NotesPanel({ group }: { group: Group }) {
 
       {topicManager ? (
         <Modal
-          title={`Topics in ${group.name}`}
-          subtitle="Shared notes are filed under these, so the crew can filter by unit."
+          title={isStudy ? `Subjects in ${group.name}` : `Topics in ${group.name}`}
+          subtitle={
+            isStudy
+              ? "Every shared note and file is filed under one of these, so the crew can filter by subject."
+              : "Shared notes are filed under these, so the crew can filter by unit."
+          }
           size="sm"
           onClose={() => setTopicManager(false)}
           footer={
@@ -549,7 +609,9 @@ export function NotesPanel({ group }: { group: Group }) {
           }
         >
           {group.topics.length === 0 ? (
-            <p className="nm-help mb-3">No topics yet. Add the units you trade notes from.</p>
+            <p className="nm-help mb-3">
+              {isStudy ? "No subjects yet. Add the units this crew trades notes from." : "No topics yet."}
+            </p>
           ) : (
             <div className="nm-topiclist">
               {group.topics.map((item) => (
@@ -564,7 +626,7 @@ export function NotesPanel({ group }: { group: Group }) {
                       if (value && value !== item.name) {
                         void store
                           .renameTopic(group.id, item.id, value)
-                          .then(() => toast("Topic renamed", { kind: "success" }));
+                          .then(() => toast(isStudy ? "Subject renamed" : "Topic renamed", { kind: "success" }));
                       }
                     }}
                   />
@@ -583,7 +645,7 @@ export function NotesPanel({ group }: { group: Group }) {
           <div className="nm-inline-add">
             <input
               className="nm-input"
-              placeholder="Add a topic, e.g. MATH201"
+              placeholder={isStudy ? "Add a subject, e.g. MATH201" : "Add a topic, e.g. MATH201"}
               value={newTopic}
               onChange={(event) => setNewTopic(event.target.value)}
               onKeyDown={(event) => {
@@ -627,6 +689,137 @@ export function NotesPanel({ group }: { group: Group }) {
           ]}
         />
       ) : null}
+    </>
+  );
+
+  if (isStudy) {
+    return (
+      <>
+        <div className="nm-vault-layout">
+          <aside className="nm-vault-side">
+            <nav className="nm-vault-nav" aria-label="Subjects">
+              <button
+                type="button"
+                className={`nm-folders${activeTopic === "all" ? " is-active" : ""}`}
+                onClick={() => setTopic("all")}
+              >
+                <i className="fa-solid fa-layer-group" aria-hidden="true" />
+                <span>All notes</span>
+                <span className="nm-mono nm-folder-count">{notes.length}</span>
+              </button>
+              {group.topics.map((item) => (
+                <div className={`nm-folderrow${activeTopic === item.id ? " is-active" : ""}`} key={item.id}>
+                  <button
+                    type="button"
+                    className={`nm-folders${activeTopic === item.id ? " is-active" : ""}`}
+                    onClick={() => setTopic(item.id)}
+                  >
+                    <span className={`nm-dot nm-mk-${item.color}`} />
+                    <span>{item.name}</span>
+                    <span className="nm-mono nm-folder-count">
+                      {notes.filter((note) => note.topicId === item.id).length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="nm-iconbtn nm-iconbtn--sm"
+                    aria-label={`${item.name} options`}
+                    title="Rename or remove"
+                    onClick={() => setTopicManager(true)}
+                  >
+                    <i className="fa-solid fa-ellipsis" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className={`nm-folders${activeTopic === "general" ? " is-active" : ""}`}
+                onClick={() => setTopic("general")}
+              >
+                <i className="fa-solid fa-inbox" aria-hidden="true" />
+                <span>General</span>
+                <span className="nm-mono nm-folder-count">
+                  {notes.filter((note) => !note.topicId).length}
+                </span>
+              </button>
+              <button type="button" className="nm-folders nm-folders--add" onClick={() => setTopicManager(true)}>
+                <i className="fa-solid fa-plus" aria-hidden="true" />
+                <span>New subject</span>
+              </button>
+            </nav>
+          </aside>
+          <div className="nm-vault-main">
+            <div className="nm-vault-head">
+              <h2 className="nm-section-title">
+                {activeTopic === "all"
+                  ? "Everything shared"
+                  : activeTopic === "general"
+                    ? "General"
+                    : group.topics.find((item) => item.id === activeTopic)?.name}
+              </h2>
+              <span className="nm-mono nm-meta">
+                {sorted.length} item{sorted.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            {composer}
+            {feed}
+          </div>
+        </div>
+        {groupLinks}
+        {modals}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="nm-toolbar">
+        <span className="nm-mono nm-meta">
+          {group.topics.length
+            ? `${group.topics.length} topic${group.topics.length === 1 ? "" : "s"}`
+            : "No topics yet"}
+        </span>
+        <div className="nm-toolbar-spacer" />
+        <button type="button" className="nm-btn nm-btn--ghost nm-btn--sm" onClick={() => setTopicManager(true)}>
+          <i className={`fa-solid ${group.topics.length ? "fa-sliders" : "fa-plus"}`} aria-hidden="true" />
+          {group.topics.length ? "Manage topics" : "Add topics"}
+        </button>
+      </div>
+
+      {group.topics.length ? (
+        <div className="nm-filterchips nm-topicbar">
+          <button
+            type="button"
+            className={`nm-chip nm-chip--sm nm-chip--link${activeTopic === "all" ? " is-active" : ""}`}
+            onClick={() => setTopic("all")}
+          >
+            All<span className="nm-mono">{notes.length}</span>
+          </button>
+          {group.topics.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`nm-chip nm-chip--sm nm-chip--link nm-mk-${item.color}${activeTopic === item.id ? " is-active" : ""}`}
+              onClick={() => setTopic(item.id)}
+            >
+              {item.name}
+              <span className="nm-mono">{notes.filter((note) => note.topicId === item.id).length}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`nm-chip nm-chip--sm nm-chip--link${activeTopic === "general" ? " is-active" : ""}`}
+            onClick={() => setTopic("general")}
+          >
+            General<span className="nm-mono">{notes.filter((note) => !note.topicId).length}</span>
+          </button>
+        </div>
+      ) : null}
+
+      {composer}
+      {feed}
+      {groupLinks}
+      {modals}
     </>
   );
 }

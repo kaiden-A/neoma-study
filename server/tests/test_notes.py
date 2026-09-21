@@ -1,47 +1,11 @@
 import io
-from collections.abc import Iterator
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
-from app.dependencies import get_storage
-from app.main import app
-from app.services.storage_services import Storage
 
 settings = get_settings()
-
-
-class FakeStorage(Storage):
-    """Records object writes without touching R2."""
-
-    def __init__(self) -> None:
-        self.objects: dict[str, bytes] = {}
-        self.deleted: list[str] = []
-
-    @property
-    def configured(self) -> bool:
-        return True
-
-    def put(self, key: str, data: bytes, content_type: str) -> None:
-        self.objects[key] = data
-
-    def delete(self, key: str | None) -> None:
-        if key:
-            self.deleted.append(key)
-            self.objects.pop(key, None)
-
-    def presigned_get(self, key: str) -> str:
-        return f"https://r2.test/{key}?signed=1"
-
-
-@pytest.fixture
-def storage() -> Iterator[FakeStorage]:
-    fake = FakeStorage()
-    app.dependency_overrides[get_storage] = lambda: fake
-    yield fake
-    app.dependency_overrides.pop(get_storage, None)
 
 
 def _note(client: TestClient, **overrides) -> dict:
@@ -183,7 +147,7 @@ def test_files_are_owner_scoped(client: TestClient, sign_in, make_user, db: DbSe
     assert client.delete(f"/api/files/{upload['id']}").status_code == 404
 
 
-def test_share_to_group_copies_text_and_keeps_files_private(
+def test_share_to_group_copies_text_and_file(
     client: TestClient, sign_in, make_user, db: DbSession, storage
 ) -> None:
     owner = make_user(db, email="ada@example.com")
@@ -204,11 +168,138 @@ def test_share_to_group_copies_text_and_keeps_files_private(
     assert body["scope"] == "group"
     assert body["topicId"] == topic["id"]
     assert body["type"] == "note"
-    assert body["fileId"] is None
+    assert body["fileId"] is not None and body["fileId"] != upload["id"]
+    assert body["fileName"] == "scan.jpg"
     assert body["title"] == "Week 5 scan"
 
     personal = client.get(f"/api/notes/{note['id']}").json()
     assert personal["scope"] == "personal"
+    assert personal["fileId"] == upload["id"]
+    # The share copied the object instead of pointing at the personal file.
+    assert storage.copies == [
+        (f"users/{owner.id}/{upload['id']}", f"groups/{group['id']}/{body['fileId']}")
+    ]
+
+    # Deleting the personal note leaves the shared copy alone.
+    assert client.delete(f"/api/notes/{note['id']}").status_code == 204
+    assert storage.deleted == [f"users/{owner.id}/{upload['id']}"]
+
+
+def test_share_can_leave_the_file_behind(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    sign_in(make_user(db))
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    upload = client.post("/api/files", files={"file": ("scan.jpg", io.BytesIO(b"img"), "image/jpeg")}).json()
+    note = _note(client, type="handwritten", title="Week 5 scan", fileId=upload["id"])
+
+    shared = client.post(
+        f"/api/notes/{note['id']}/share",
+        json={"groupId": group["id"], "includeFile": False},
+    )
+    assert shared.status_code == 201, shared.text
+    assert shared.json()["fileId"] is None
+    assert storage.copies == []
+
+
+def test_group_files_are_member_scoped(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    member = make_user(db, email="maya@example.com")
+    outsider = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    client.post(f"/api/groups/{group['id']}/invite", json={"email": "maya@example.com"})
+    upload = client.post(
+        "/api/files",
+        files={"file": ("scan.jpg", io.BytesIO(b"img"), "image/jpeg")},
+        data={"groupId": group["id"]},
+    ).json()
+    assert next(iter(storage.objects)).startswith(f"groups/{group['id']}/")
+
+    client.post("/api/auth/logout")
+    sign_in(member)
+    assert client.get(f"/api/files/{upload['id']}/url").status_code == 200
+
+    client.post("/api/auth/logout")
+    sign_in(outsider)
+    assert client.get(f"/api/files/{upload['id']}/url").status_code == 404
+    assert client.delete(f"/api/files/{upload['id']}").status_code == 404
+    not_member_upload = client.post(
+        "/api/files",
+        files={"file": ("hack.jpg", io.BytesIO(b"img"), "image/jpeg")},
+        data={"groupId": group["id"]},
+    )
+    assert not_member_upload.status_code == 404
+
+
+def test_group_note_carries_a_file(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    member = make_user(db, email="maya@example.com")
+    sign_in(owner)
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    client.post(f"/api/groups/{group['id']}/invite", json={"email": "maya@example.com"})
+    upload = client.post(
+        "/api/files",
+        files={"file": ("paper.pdf", io.BytesIO(b"%PDF"), "application/pdf")},
+        data={"groupId": group["id"]},
+    ).json()
+    client.post("/api/auth/logout")
+
+    sign_in(member)
+    note = client.post(
+        f"/api/groups/{group['id']}/notes",
+        json={"type": "paper", "title": "2023 past paper", "fileId": upload["id"]},
+    )
+    assert note.status_code == 201, note.text
+    assert note.json()["fileName"] == "paper.pdf"
+    assert note.json()["fileSize"] == 4
+
+    # A personal note may not borrow somebody else's group file...
+    personal = client.post("/api/notes", json={"type": "paper", "title": "Mine", "fileId": upload["id"]})
+    assert personal.status_code == 404
+
+    # ...and a group note may only carry files scoped to that group.
+    personal_upload = client.post(
+        "/api/files", files={"file": ("mine.jpg", io.BytesIO(b"img"), "image/jpeg")}
+    ).json()
+    borrowed = client.post(
+        f"/api/groups/{group['id']}/notes", json={"title": "Borrowed", "fileId": personal_upload["id"]}
+    )
+    assert borrowed.status_code == 404
+
+
+def test_deleting_a_group_note_removes_its_group_file(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    sign_in(make_user(db))
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    upload = client.post(
+        "/api/files",
+        files={"file": ("answers.pdf", io.BytesIO(b"%PDF"), "application/pdf")},
+        data={"groupId": group["id"]},
+    ).json()
+    note = client.post(
+        f"/api/groups/{group['id']}/notes", json={"title": "Answers", "fileId": upload["id"]}
+    ).json()
+
+    assert client.delete(f"/api/notes/{note['id']}").status_code == 204
+    assert storage.deleted == [f"groups/{group['id']}/{upload['id']}"]
 
 
 def test_group_notes_and_request_answer_flow(client: TestClient, sign_in, make_user, db: DbSession) -> None:
