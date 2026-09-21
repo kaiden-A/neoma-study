@@ -1,16 +1,16 @@
 # Neoma — repo rules for agents
 
 Study OS: group projects (task boards), study groups (shared notes), personal
-notes, one calendar. This repo is built from `master-plan.md`; read it before
-changing the core. `prototype/` is the frontend-only reference for behaviour
-and design — read it, don't edit it (source of truth for the look).
+notes, one calendar. Built from `master-plan.md`; read it before changing the
+core. `prototype/` is the frontend-only reference for behaviour and design —
+read it, don't edit it (source of truth for the look).
 
 ## Commands
 
 ```bash
 npm run start                 # installs client + server deps
 npm run dev                   # both dev servers (api :8000, web :3000)
-uv run --directory server pytest               # tests (live Neon, throwaway schema)
+uv run --directory server pytest                    # live Neon, throwaway schema
 uv run --directory server pytest tests/test_auth.py -q
 uv run --directory server ruff check .
 uv run --directory server ruff format .
@@ -20,6 +20,8 @@ npm --prefix client run lint
 npm --prefix client run build
 uv run --directory server alembic revision --autogenerate -m "..."
 uv run --directory server alembic upgrade head
+uv run --directory server python scripts/send_reminders.py --dry-run
+uv run --directory server python scripts/smoke_session.py mint|clean   # dev session for curl checks
 ```
 
 Server runs on Python 3.13 (`.python-version`, uv-managed). The Dockerfile
@@ -31,21 +33,35 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
 - Every table is schema-qualified (`Base.metadata = MetaData(schema=settings.db_schema)`).
 - Timestamps are tz-aware UTC in the DB; API payloads use integer milliseconds.
 - snake_case columns, camelCase Pydantic fields (no alias generator).
-- Errors are `{"error": "sentence"}`; 422 adds `details`. The client reads `.error`.
-- Routers stay thin: validate shape, enforce ownership (`WHERE owner_id = user.id`),
-  call `app/services/*`, return a schema. No route handlers under `client/app/api/`.
-- Alembic migrations are hand-reviewed; deploys never run them.
+- Errors are `{"error": "sentence"}`. Services raise `app/services/errors.py`
+  exceptions (`NotFoundError`, `ForbiddenError`, …); `main.py` maps them. You do
+  not need HTTPException in a service.
+- Routers stay thin: validate shape, enforce ownership, call `app/services/*`,
+  return a schema. No route handlers under `client/app/api/`.
+- Ownership scoping: personal rows by `owner_id`; group rows by membership
+  (`services/access.py:require_group`, 404 for non-members). Never trust an id
+  from the payload.
+- Alembic migrations are hand-reviewed; deploys never run them. Autogenerate
+  always wants to churn schema-qualified FKs — ignore that, but drop the
+  generated no-op directives by hand.
+- `users.settings` is a JSONB bag validated by `schemas/settings.py` on every
+  read/write; adding a preference does not need a migration.
+- `app/templates/emails/*` (Jinja2) must stay inside `app/` so the Docker build
+  bakes them into the venv.
 - `server/.env` is never committed; `server/.env.example` documents every setting.
 
 ## Auth invariants
 
 - Zitadel OIDC PKCE public client, code exchange server-side; no client secret.
-- The verifier lives only in the signed, HttpOnly, 10-minute `app_oauth` cookie payload.
+- The verifier lives only in the signed, HttpOnly, 10-minute `app_oauth` cookie.
 - Sessions are DB rows; the cookie carries a random token, the DB stores its sha256.
 - `next` redirects always go through `app/utils.py:local_path()` — same-site only.
-- Logout must return the Zitadel `end_session` URL and the client must navigate to it.
-- Sign-in is branded **Elysiaa SSO** in UI copy (the issuer is `elysiaa-*.zitadel.cloud`).
-- Guests are not implemented yet (master-plan §7); do not half-build them.
+- Logout returns the Zitadel `end_session` URL; the client must navigate to it.
+- Sign-in is branded **Elysiaa SSO**; the login page sends `login_hint` (and
+  `prompt=create` from signup) to the hosted page.
+- Invited people get a placeholder `users` row (`zitadel_sub IS NULL`); first
+  sign-in adopts it by email so group memberships survive.
+- Guests are not implemented (master-plan §7); do not half-build them.
 
 ## Client invariants
 
@@ -54,14 +70,39 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
 - `proxy.ts` is the route guard (NOT `middleware.ts`); it only checks the session
   cookie exists. Real authorization is server-side.
 - `/api/*` is always the FastAPI rewrite in `next.config.ts` (afterFiles).
-- Session-bearing fetches go through `lib/api-client.ts:apiFetch` (401 → /login?next=).
+- Session-bearing fetches go through `lib/api-client.ts` (`apiFetch`/`apiGet`/
+  `apiPost`/…); 401 → `/login?next=`.
+- `lib/store.tsx` is the single client store (the prototype's store, re-shaped):
+  `GET /api/bootstrap` loads everything and actions patch local state. Add a
+  slice + actions there rather than fetching in pages.
 - `app/globals.css` is the prototype's design layer copied verbatim, plus Tailwind
   `@theme` tokens and next/font wiring. Keep the look identical to `prototype/`;
-  port component classes rather than inventing new ones. Markers: amber, mint,
-  sky, coral, violet, pink. Signature elements: the moon-phase deadline dial and
-  the highlighter strike.
-- Icons are Font Awesome 6.7.2 via CDN in the root layout; fonts are Fraunces +
-  IBM Plex Sans/Mono self-hosted by next/font.
+  port component classes rather than inventing new ones.
+- React Compiler lint is on: no `Date.now()` in render (use `lib/useNow.ts`), no
+  synchronous `setState` in effects (lazy initializers or event handlers).
+- Uploads compress in the browser (`lib/files.ts`) and then POST to `/api/files`;
+  previews use short-lived presigned URLs resolved per render. Three limits must
+  stay ordered: client `MAX_FILE_BYTES` (15MB) ≤ server `MAX_UPLOAD_BYTES`
+  (15MB) < `experimental.proxyClientMaxBodySize` in `next.config.ts` (20MB).
+  Next buffers proxied bodies at 10MB by default and silently truncates larger
+  ones, so lowering that buffer below the file cap corrupts uploads.
+
+## Features and seams
+
+- Groups: `services/group_services.py` (members, topics, links, invites).
+  Invite emails go out through `services/email_services.py` (Resend).
+- Tasks: `services/task_services.py`. Personal to-dos are `group_id IS NULL`.
+- Notes/files: `services/note_services.py` + `services/storage_services.py` (R2).
+  Sharing copies text into a group note; files never leave personal scope.
+- Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.
+- Notifications are derived, never stored: `services/notification_services.py`
+  (keys like `overdue:{task}`, `due:{task}:{lead}`); only read/snooze state persists.
+- Email: one digest per user per day (`reminder_services.send_reminders`,
+  deduped via `email_log`), driven by the CLI or
+  `POST /api/maintenance/send-reminders` with the `X-Cleanup-Secret` header.
+- Data: `GET /api/export`, `POST /api/import`, `POST /api/demo` (sample semester),
+  `DELETE /api/demo` (deletes everything the caller owns).
+- MCP: `app/mcp_server.py` + `app/mcp_tools.py`, mounted last; `GET /mcp` is 405.
 
 ## Deploy notes (not wired yet)
 
@@ -69,3 +110,4 @@ Cloud Run (`server/Dockerfile`, context `./server`) + Firebase Hosting rewrites
 for `/api/**`, `/mcp`, `/docs`, `/.well-known/**`. Production must set
 `SESSION_COOKIE_NAME=__session` (Firebase strips other cookies) and
 `COOKIE_SECURE=true`. `MCP_ALLOWED_HOSTS` must include the public hostname.
+`docs/google-calendar.md` has the GCP walkthrough for two-way sync (on hold).
