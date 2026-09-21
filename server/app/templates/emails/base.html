@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>{% block title %}{{ subject }}{% endblock %}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#EFF1EC;color:#171C1A;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EFF1EC;padding:32px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background:#FFFFFF;border:1px solid #D9DFD7;border-radius:14px;overflow:hidden;">
+            <tr>
+              <td style="padding:20px 30px;border-bottom:1px solid #D9DFD7;">
+                <span style="font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;letter-spacing:.22em;color:#5A655F;">NEOMA</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 30px 6px;">
+                <h1 style="margin:0 0 14px;font-size:22px;line-height:1.25;font-weight:600;letter-spacing:-.01em;">
+                  {% block heading %}{% endblock %}
+                </h1>
+                {% block body %}{% endblock %}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 30px 30px;">
+                {% block cta %}{% endblock %}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 30px 22px;border-top:1px solid #D9DFD7;font-size:12px;line-height:1.6;color:#5A655F;">
+                {% block footer %}{% endblock %}
+              </td>
+            </tr>
+          </table>
+          <p style="max-width:560px;margin:14px auto 0;font-size:11px;color:#8B968F;text-align:center;">
+            Neoma · Study OS
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

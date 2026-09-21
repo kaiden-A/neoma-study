@@ -1,0 +1,16 @@
+{{ inviter_name }} invited you to {{ group_name }} on Neoma.
+
+{% if group_subject %}Unit: {{ group_subject }}
+{% endif %}{% if description %}{{ description }}
+
+{% endif %}{% if topics %}Notes are filed under: {{ topics|join(", ") }}.
+{% endif %}
+Join here: {{ invite_url }}
+
+Or paste this code on Groups -> Have an invite link?: {{ invite_code }}
+
+Join and you will see its deadlines on your calendar, share its notes, and get the same reminders as everyone else.
+
+--
+{{ inviter_name }}{% if inviter_email %} ({{ inviter_email }}){% endif %} sent you this because they added you to their group. If it is not for you, you can ignore this email.
+Neoma · Study OS

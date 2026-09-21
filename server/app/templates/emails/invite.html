@@ -1,0 +1,36 @@
+{% extends "emails/base.html" %}
+
+{% block heading %}{{ inviter_name }} invited you to {{ group_name }}{% endblock %}
+
+{% block body %}
+  <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
+    You have a new {{ group_kind }} on Neoma: <strong>{{ group_name }}</strong>{% if group_subject %} · {{ group_subject }}{% endif %}.
+  </p>
+  {% if description %}
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#5A655F;">{{ description }}</p>
+  {% endif %}
+  {% if topics %}
+    <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#5A655F;">
+      Notes are filed under
+      {% for topic in topics %}<strong>{{ topic }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}.
+    </p>
+  {% endif %}
+  <p style="margin:0;font-size:15px;line-height:1.6;color:#5A655F;">
+    Join and you will see its deadlines on your calendar, share its notes, and get the same reminders as everyone else.
+  </p>
+{% endblock %}
+
+{% block cta %}
+  <a href="{{ invite_url }}" style="display:inline-block;background:#171C1A;color:#EFF1EC;text-decoration:none;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;">
+    Join {{ group_name }}
+  </a>
+  <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#5A655F;">
+    Or paste this code on <strong>Groups → Have an invite link?</strong><br />
+    <span style="font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;letter-spacing:.08em;color:#171C1A;">{{ invite_code }}</span>
+  </p>
+{% endblock %}
+
+{% block footer %}
+  {{ inviter_name }}{% if inviter_email %} ({{ inviter_email }}){% endif %} sent you this because they added you to their group.
+  If it is not for you, you can ignore this email.
+{% endblock %}

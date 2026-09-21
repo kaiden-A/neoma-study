@@ -1,0 +1,16 @@
+{
+  "name": "neoma-study",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix client install && uv sync --directory server",
+    "dev": "concurrently --kill-others --names api,web --prefix-colors cyan,magenta \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "uv run --directory server uvicorn app.main:app --reload --port 8000",
+    "dev:web": "npm --prefix client run dev",
+    "test": "uv run --directory server pytest",
+    "lint": "uv run --directory server ruff check .",
+    "typecheck": "uv run --directory server pyright && npm --prefix client run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

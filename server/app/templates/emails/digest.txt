@@ -1,0 +1,15 @@
+{% if heading %}{{ heading }}{% endif %}
+Here is everything Neoma is watching for you{% if date_label %} on {{ date_label }}{% endif %}.
+
+{% for group in groups %}== {{ group.label }} ({{ group.entries|length }}) ==
+{% for item in group.entries %}- {{ item.title }}
+  {{ item.body }}
+{% endfor %}
+{% endfor %}
+Open Neoma: {{ notifications_url }}
+
+Change what lands here any time in Settings -> Notifications.
+Turn off reminder emails: {{ unsubscribe_url }}
+
+--
+Neoma · Study OS
