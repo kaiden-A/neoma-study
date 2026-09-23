@@ -1,0 +1,25 @@
+# Build context: server/ (see Dockerfile header).
+.venv
+venv
+
+# Secrets and local config; runtime values come from environment variables.
+.env
+.env.*
+!.env.example
+
+__pycache__
+*.py[cod]
+*.egg-info
+
+.pytest_cache
+.ruff_cache
+.pyright
+.coverage
+htmlcov
+
+tests
+
+.git
+.gitignore
+.dockerignore
+Dockerfile*
