@@ -27,6 +27,7 @@ class TaskOut(BaseModel):
     completedAt: int | None
     createdAt: int
     updatedAt: int
+    reminderMinutes: int
     assigneeIds: list[str]
     subtasks: list[SubtaskOut]
     links: list[TaskLinkOut]
@@ -51,6 +52,7 @@ class TaskCreate(BaseModel):
     dueAt: int | None = None
     status: TaskStatus = TaskStatus.todo
     priority: TaskPriority = TaskPriority.med
+    reminderMinutes: int = Field(default=60, ge=0, le=10080)
     assigneeIds: list[str] = Field(default_factory=list, max_length=100)
     subtasks: list[SubtaskIn] = Field(default_factory=list, max_length=100)
     links: list[TaskLinkIn] = Field(default_factory=list, max_length=50)
@@ -63,6 +65,7 @@ class TaskPatch(BaseModel):
     dueAt: int | None = None
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
+    reminderMinutes: int | None = Field(default=None, ge=0, le=10080)
     assigneeIds: list[str] | None = Field(default=None, max_length=100)
     subtasks: list[SubtaskIn] | None = Field(default=None, max_length=100)
     links: list[TaskLinkIn] | None = Field(default=None, max_length=50)

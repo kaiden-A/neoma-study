@@ -32,6 +32,8 @@ class Event(Base):
     location: Mapped[str] = mapped_column(String(300), default="", nullable=False)
     reminder_minutes: Mapped[int] = mapped_column(default=60, nullable=False)
     notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # The Google twin for two-way sync; null until pushed or imported.
+    google_event_id: Mapped[str | None] = mapped_column(String(200), unique=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

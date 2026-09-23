@@ -330,6 +330,11 @@ export function CalendarView() {
                 </div>
               </div>
               <div className="nm-gcal-actions">
+                {google?.status === "connected" ? null : (
+                  <a className="nm-btn nm-btn--secondary nm-btn--sm" href="/api/google/connect">
+                    Connect Google Calendar
+                  </a>
+                )}
                 <button type="button" className="nm-btn nm-btn--ghost nm-btn--sm" onClick={() => void exportIcs()}>
                   <i className="fa-solid fa-file-arrow-down" aria-hidden="true" />
                   Export .ics

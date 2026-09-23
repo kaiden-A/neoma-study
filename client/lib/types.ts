@@ -93,6 +93,7 @@ export interface Task {
   completedAt: number | null;
   createdAt: number;
   updatedAt: number;
+  reminderMinutes: number;
   assigneeIds: string[];
   subtasks: Subtask[];
   links: TaskLink[];
@@ -195,7 +196,6 @@ export interface UserSettings {
 
 export type UserSettingsPatch = Partial<Omit<UserSettings, "kinds" | "google" | "elpis">> & {
   kinds?: Partial<NotificationKinds>;
-  google?: Partial<GoogleSettings>;
   elpis?: Partial<ElpisSettings>;
 };
 

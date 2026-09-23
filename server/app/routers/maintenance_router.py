@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..config import get_settings
 from ..database import get_db
 from ..models import User
-from ..services import reminder_services, settings_services
+from ..services import google_services, reminder_services, settings_services
 
 router = APIRouter(prefix="/api", tags=["maintenance"])
 
@@ -23,6 +23,17 @@ def send_reminders(
     """Drives the reminder digest from a scheduler. Secret header only."""
     _require_secret(x_cleanup_secret)
     return reminder_services.send_reminders(db, dry_run=dry_run)
+
+
+@router.post("/maintenance/sync-google")
+def sync_google(
+    dry_run: bool = Query(default=False),
+    x_cleanup_secret: str | None = Header(default=None),
+    db: DbSession = Depends(get_db),
+) -> dict[str, int]:
+    """Drives Google Calendar sync from a scheduler. Secret header only."""
+    _require_secret(x_cleanup_secret)
+    return google_services.sync_all(db, dry_run=dry_run)
 
 
 @router.post("/maintenance/cleanup")

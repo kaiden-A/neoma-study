@@ -9,6 +9,7 @@ from .enums import (
     UserKind,
 )
 from .events import Event
+from .google import GoogleAccount
 from .groups import EmailLog, Group, GroupLink, GroupMember, GroupTopic, NotificationState
 from .notes import FileObject, Note, Subject
 from .sessions import Session
@@ -20,6 +21,7 @@ __all__ = [
     "Event",
     "EventType",
     "FileObject",
+    "GoogleAccount",
     "Group",
     "GroupKind",
     "GroupLink",

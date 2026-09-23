@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..models import GroupMember, Task, TaskAssignee, TaskLink, TaskStatus, TaskSubtask, User
 from ..schemas.tasks import SubtaskIn, SubtaskOut, TaskCreate, TaskLinkIn, TaskLinkOut, TaskOut, TaskPatch
 from ..utils import from_ms, to_ms
-from . import access
+from . import access, google_services
 from .errors import InvalidError, NotFoundError
 
 MISSING_TASK = "We could not find that task."
@@ -50,6 +50,7 @@ def task_out(task: Task) -> TaskOut:
         completedAt=to_ms(task.completed_at),
         createdAt=to_ms(task.created_at) or 0,
         updatedAt=to_ms(task.updated_at) or 0,
+        reminderMinutes=task.reminder_minutes,
         assigneeIds=sorted(str(assignee.user_id) for assignee in task.assignees),
         subtasks=[
             SubtaskOut(id=str(row.id), title=row.title, done=row.done)
@@ -153,6 +154,7 @@ def create_task(db: DbSession, user: User, data: TaskCreate) -> TaskOut:
         due_at=from_ms(data.dueAt),
         status=data.status,
         priority=data.priority,
+        reminder_minutes=data.reminderMinutes,
         created_by=user.id,
     )
     db.add(task)
@@ -162,6 +164,7 @@ def create_task(db: DbSession, user: User, data: TaskCreate) -> TaskOut:
     _apply_links(task, data.links)
     db.commit()
     db.refresh(task)
+    google_services.push_task(db, user, task)
     return task_out(task)
 
 
@@ -192,6 +195,8 @@ def update_task(db: DbSession, user: User, task_id: uuid.UUID, patch: TaskPatch)
         task.due_at = from_ms(patch.dueAt)
     if "priority" in fields and patch.priority is not None:
         task.priority = patch.priority
+    if "reminderMinutes" in fields and patch.reminderMinutes is not None:
+        task.reminder_minutes = patch.reminderMinutes
     if "status" in fields and patch.status is not None and patch.status != task.status:
         task.status = patch.status
         task.completed_at = datetime.now(UTC) if patch.status is TaskStatus.done else None
@@ -204,11 +209,13 @@ def update_task(db: DbSession, user: User, task_id: uuid.UUID, patch: TaskPatch)
 
     db.commit()
     db.refresh(task)
+    google_services.push_task(db, user, task)
     return task_out(task)
 
 
 def delete_task(db: DbSession, user: User, task_id: uuid.UUID) -> None:
     task = require_task(db, user, task_id)
+    google_services.delete_task_twin(db, user, task)
     db.delete(task)
     db.commit()
 
@@ -225,6 +232,7 @@ def postpone_task(db: DbSession, user: User, task_id: uuid.UUID, timezone_offset
         task.due_at = tomorrow + offset
     db.commit()
     db.refresh(task)
+    google_services.push_task(db, user, task)
     return task_out(task)
 
 
@@ -238,6 +246,7 @@ def duplicate_task(db: DbSession, user: User, task_id: uuid.UUID) -> TaskOut:
         due_at=task.due_at,
         status=TaskStatus.todo,
         priority=task.priority,
+        reminder_minutes=task.reminder_minutes,
         created_by=user.id,
     )
     db.add(copy)
@@ -250,4 +259,5 @@ def duplicate_task(db: DbSession, user: User, task_id: uuid.UUID) -> TaskOut:
         db.add(TaskLink(task_id=copy.id, label=link.label, url=link.url, position=index))
     db.commit()
     db.refresh(copy)
+    google_services.push_task(db, user, copy)
     return task_out(copy)

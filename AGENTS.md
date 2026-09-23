@@ -98,6 +98,13 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   copy is independent, and deleting a note/group purges its blobs. Access rules
   live in `services/file_services.py`. Sharing copies text into a group note.
 - Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.
+  Google Calendar sync lives in `services/google_services.py` (`google_accounts`,
+  `events.google_event_id`, `tasks.google_event_id`/`google_account_id`): OAuth
+  connect, best-effort push (group events invite members; tasks invite assignees
+  and use `tasks.reminder_minutes`), incremental pull via `syncToken`; driven by
+  `scripts/sync_google.py` / `POST /api/maintenance/sync-google`. The client
+  auto-syncs once a day (`?auto=true`); tokens are encrypted with a key derived
+  from `APP_SECRET`, so rotating it forces reconnects.
 - Notifications are derived, never stored: `services/notification_services.py`
   (keys like `overdue:{task}`, `due:{task}:{lead}`); only read/snooze state persists.
 - Email: one digest per user per day (`reminder_services.send_reminders`,

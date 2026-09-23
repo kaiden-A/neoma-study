@@ -58,6 +58,12 @@ class Task(Base):
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Google twin for two-way sync; the account is the organizer that owns it.
+    google_event_id: Mapped[str | None] = mapped_column(String(200), unique=True, index=True)
+    google_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("google_accounts.id", ondelete="SET NULL")
+    )
+    reminder_minutes: Mapped[int] = mapped_column(Integer, default=60, server_default="60", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

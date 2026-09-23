@@ -44,13 +44,16 @@ class UserSettings(BaseModel):
 
 
 class UserSettingsPatch(BaseModel):
-    """Every field optional; only what the client sent is applied."""
+    """Every field optional; only what the client sent is applied.
+
+    `google` is deliberately absent: the connect/sync flow is the only writer,
+    so a PATCH can never fake a connected calendar.
+    """
 
     theme: Literal["light", "dark"] | None = None
     leadTimeHours: int | None = None
     browserNotifications: bool | None = None
     kinds: NotificationKinds | None = None
-    google: GoogleSettings | None = None
     elpis: ElpisSettings | None = None
     syncLog: list[str] | None = None
 

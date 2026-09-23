@@ -17,6 +17,7 @@ from .routers import (
     data_router,
     events_router,
     files_router,
+    google_router,
     groups_router,
     health_router,
     invites_router,
@@ -112,6 +113,7 @@ app.include_router(notes_router.router)
 app.include_router(subjects_router.router)
 app.include_router(files_router.router)
 app.include_router(events_router.router)
+app.include_router(google_router.router)
 app.include_router(notifications_router.router)
 app.include_router(maintenance_router.router)
 app.include_router(data_router.router)

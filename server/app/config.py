@@ -61,9 +61,14 @@ class Settings(BaseSettings):
     email_reply_to: str = ""
     email_override_to: str = ""
 
-    # Google Calendar is not wired yet; see docs/google-calendar.md.
+    # Google Calendar two-way sync; see docs/google-calendar.md.
     google_client_id: str = ""
     google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/google/callback"
+
+    @property
+    def google_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
 
     @property
     def storage_configured(self) -> bool:

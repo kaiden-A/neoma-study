@@ -59,6 +59,15 @@ export const EVENT_TYPES: Record<string, { label: string; icon: string; marker: 
   personal: { label: "Personal", icon: "fa-mug-hot", marker: "amber" },
 };
 
+export const REMINDER_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "No reminder" },
+  { value: 15, label: "15 minutes before" },
+  { value: 60, label: "1 hour before" },
+  { value: 1440, label: "1 day before" },
+  { value: 2880, label: "2 days before" },
+  { value: 10080, label: "1 week before" },
+];
+
 export const STATUS_LABEL: Record<string, string> = {
   todo: "Not started",
   doing: "In progress",

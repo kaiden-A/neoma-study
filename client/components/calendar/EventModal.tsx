@@ -6,18 +6,9 @@ import { Field } from "@/components/ui/bits";
 import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { fromInputValue, toInputValue } from "@/lib/dates";
-import { EVENT_TYPES } from "@/lib/markers";
+import { EVENT_TYPES, REMINDER_OPTIONS } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { CalendarEvent, EventType } from "@/lib/types";
-
-const REMINDERS: { value: number; label: string }[] = [
-  { value: 0, label: "No reminder" },
-  { value: 15, label: "15 minutes before" },
-  { value: 60, label: "1 hour before" },
-  { value: 1440, label: "1 day before" },
-  { value: 2880, label: "2 days before" },
-  { value: 10080, label: "1 week before" },
-];
 
 export interface EventModalDefaults {
   type?: EventType;
@@ -224,7 +215,7 @@ export function EventModal({
             value={String(reminder)}
             onChange={(event_) => setReminder(Number(event_.target.value))}
           >
-            {REMINDERS.map((item) => (
+            {REMINDER_OPTIONS.map((item) => (
               <option key={item.value} value={item.value}>
                 {item.label}
               </option>

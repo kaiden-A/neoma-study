@@ -6,7 +6,7 @@ import { Avatar, Field } from "@/components/ui/bits";
 import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { domainOf, fromInputValue, toInputValue } from "@/lib/dates";
-import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/markers";
+import { PRIORITY_LABEL, REMINDER_OPTIONS, STATUS_LABEL } from "@/lib/markers";
 import { useStore, type SubtaskInput, type TaskLinkInput } from "@/lib/store";
 import type { Task, TaskPriority, TaskStatus } from "@/lib/types";
 
@@ -34,6 +34,7 @@ export function TaskModal({
   const [dueAt, setDueAt] = useState(toInputValue(task?.dueAt ?? defaults?.dueAt ?? null));
   const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? "med");
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? "todo");
+  const [reminder, setReminder] = useState(task?.reminderMinutes ?? 60);
   const [groupId, setGroupId] = useState(task?.groupId ?? defaults?.groupId ?? "");
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assigneeIds ?? defaults?.assigneeIds ?? [],
@@ -87,6 +88,7 @@ export function TaskModal({
       dueAt: fromInputValue(dueAt),
       priority,
       status,
+      reminderMinutes: reminder,
       groupId: groupId || null,
       assigneeIds: groupId ? assigneeIds : [],
       subtasks: subtasks.map((item) => ({ title: item.title, done: item.done })),
@@ -207,6 +209,20 @@ export function TaskModal({
             {(["todo", "doing", "done"] as const).map((value) => (
               <option key={value} value={value}>
                 {STATUS_LABEL[value]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Reminder" htmlFor="tm-reminder">
+          <select
+            id="tm-reminder"
+            className="nm-select"
+            value={String(reminder)}
+            onChange={(event) => setReminder(Number(event.target.value))}
+          >
+            {REMINDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>

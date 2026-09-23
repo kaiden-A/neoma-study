@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiDelete, apiPatch, apiPost, apiUpload, apiGet } from "@/lib/api-client";
 import { addDays, startOfDay } from "@/lib/dates";
@@ -161,6 +161,7 @@ interface StoreValue {
 const StoreContext = createContext<StoreValue | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
+  const autoSyncDone = useRef(false);
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<PublicUser | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -205,6 +206,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    // Background sync once per page load, and at most once a day per user;
+    // the server also collapses simultaneous auto calls from other tabs.
+    if (!ready || settings?.google.status !== "connected") return;
+    if (autoSyncDone.current) return;
+    const last = settings.google.lastSyncAt;
+    if (last && new Date(last).toDateString() === new Date().toDateString()) return;
+    autoSyncDone.current = true;
+    void (async () => {
+      try {
+        await apiPost("/api/google/sync?auto=true");
+        await refresh();
+      } catch {
+        // Offline or a Google hiccup; the next visit tries again.
+      }
+    })();
+  }, [ready, settings, refresh]);
 
   const replaceGroup = useCallback((group: Group) => {
     setGroups((current) => {

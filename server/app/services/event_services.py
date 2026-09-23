@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..models import Event, GroupMember, User
 from ..schemas.events import EventCreate, EventOut, EventPatch
 from ..utils import from_ms, to_ms
-from . import access
+from . import access, google_services
 from .errors import InvalidError, NotFoundError
 
 MISSING_EVENT = "That event is gone."
@@ -104,6 +104,7 @@ def create_event(db: DbSession, user: User, data: EventCreate) -> EventOut:
     db.add(event)
     db.commit()
     db.refresh(event)
+    google_services.push_event(db, user, event)
     return event_out(event)
 
 
@@ -133,11 +134,13 @@ def update_event(db: DbSession, user: User, event_id: uuid.UUID, patch: EventPat
         event.notes = patch.notes.strip()
     db.commit()
     db.refresh(event)
+    google_services.push_event(db, user, event)
     return event_out(event)
 
 
 def delete_event(db: DbSession, user: User, event_id: uuid.UUID) -> None:
     event = require_event(db, user, event_id)
+    google_services.delete_event_twin(db, user, event)
     db.delete(event)
     db.commit()
 

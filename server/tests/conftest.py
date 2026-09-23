@@ -73,6 +73,16 @@ def _emails_off(monkeypatch) -> None:
     monkeypatch.setattr(settings, "email_override_to", "")
 
 
+@pytest.fixture(autouse=True)
+def _google_off(monkeypatch) -> None:
+    """Tests never touch Google: with no client id, push/sync are no-ops.
+
+    tests/test_google.py sets its own id/secret and a fake client.
+    """
+    monkeypatch.setattr(settings, "google_client_id", "")
+    monkeypatch.setattr(settings, "google_client_secret", "")
+
+
 @pytest.fixture
 def db() -> Iterator[DbSession]:
     session = TestingSession()

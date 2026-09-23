@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Avatar, Field } from "@/components/ui/bits";
 import { useOverlays } from "@/components/ui/Overlays";
-import { apiPatch } from "@/lib/api-client";
+import { apiPatch, apiPost } from "@/lib/api-client";
 import { fmtRelative } from "@/lib/dates";
 import { MARKERS } from "@/lib/markers";
 import { useStore } from "@/lib/store";
@@ -53,6 +53,23 @@ export default function SettingsPage() {
   const [elpisUrl, setElpisUrl] = useState(settings?.elpis.url ?? "");
   const [elpisToken, setElpisToken] = useState(settings?.elpis.token ?? "");
   const importRef = useRef<HTMLInputElement>(null);
+  const googleHandled = useRef(false);
+
+  useEffect(() => {
+    // The OAuth callback lands back here with ?google=...; report it once.
+    const googleState = new URLSearchParams(window.location.search).get("google");
+    if (!googleState || googleHandled.current) return;
+    googleHandled.current = true;
+    if (googleState === "connected") {
+      toast("Google Calendar connected — syncing…", { kind: "success" });
+      void store.refresh();
+    } else if (googleState === "unconfigured") {
+      toast("Google Calendar is not configured on the server.", { kind: "danger" });
+    } else {
+      toast("Could not connect Google Calendar. Try again.", { kind: "danger" });
+    }
+    window.history.replaceState({}, "", "/settings");
+  }, [store, toast]);
 
   if (!settings || !user) {
     return (
@@ -85,6 +102,30 @@ export default function SettingsPage() {
       if (!quiet) toast("Saved", { kind: "success", timeout: 1600 });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : "Could not save that.", { kind: "danger" });
+    }
+  }
+
+  async function disconnectGoogle() {
+    try {
+      await apiPost("/api/google/disconnect");
+      await store.refresh();
+      toast("Google Calendar disconnected", { kind: "info" });
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not disconnect.", { kind: "danger" });
+    }
+  }
+
+  async function syncGoogle() {
+    try {
+      const result = await apiPost<{ pushed: number; pulled: number }>("/api/google/sync");
+      await store.refresh();
+      toast(`Synced with Google · ${result.pushed} sent, ${result.pulled} received`, {
+        kind: "success",
+      });
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not sync with Google.", {
+        kind: "danger",
+      });
     }
   }
 
@@ -341,36 +382,37 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="nm-gcal-actions">
-              <button
-                type="button"
-                className="nm-btn nm-btn--primary nm-btn--sm"
-                onClick={() => {
-                  void patchSettings(
-                    {
-                      google: {
-                        status: settings.google.status === "connected" ? "disconnected" : "connected",
-                        email: settings.google.status === "connected" ? null : user.email,
-                        lastSyncAt: settings.google.status === "connected" ? null : Date.now(),
-                      },
-                    },
-                    true,
-                  ).then(() =>
-                    toast(
-                      settings.google.status === "connected" ? "Disconnected" : "Google Calendar connected",
-                      { kind: "info" },
-                    ),
-                  );
-                }}
-              >
-                {settings.google.status === "connected" ? "Disconnect" : "Connect Google Calendar"}
-              </button>
+              {settings.google.status === "connected" ? (
+                <>
+                  <button
+                    type="button"
+                    className="nm-btn nm-btn--secondary nm-btn--sm"
+                    onClick={() => void syncGoogle()}
+                  >
+                    <i className="fa-solid fa-rotate" aria-hidden="true" />
+                    Sync now
+                  </button>
+                  <button
+                    type="button"
+                    className="nm-btn nm-btn--danger nm-btn--ghost nm-btn--sm"
+                    onClick={() => void disconnectGoogle()}
+                  >
+                    Disconnect
+                  </button>
+                </>
+              ) : (
+                <a className="nm-btn nm-btn--primary nm-btn--sm" href="/api/google/connect">
+                  Connect Google Calendar
+                </a>
+              )}
               <a className="nm-btn nm-btn--ghost nm-btn--sm" href="/api/calendar.ics">
                 <i className="fa-solid fa-file-arrow-down" aria-hidden="true" />
                 Export .ics
               </a>
             </div>
             <p className="nm-help">
-              Two-way sync is on hold. <code>docs/google-calendar.md</code> has the setup steps for when it lands.
+              Events sync both ways, and Google sends the reminders. Group events invite the other members, so
+              they land on their calendars too.
             </p>
           </div>
         </section>
