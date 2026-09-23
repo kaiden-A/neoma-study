@@ -114,10 +114,18 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   `DELETE /api/demo` (deletes everything the caller owns).
 - MCP: `app/mcp_server.py` + `app/mcp_tools.py`, mounted last; `GET /mcp` is 405.
 
-## Deploy notes (not wired yet)
+## Deploy notes
 
-Cloud Run (`server/Dockerfile`, context `./server`) + Firebase Hosting rewrites
-for `/api/**`, `/mcp`, `/docs`, `/.well-known/**`. Production must set
-`SESSION_COOKIE_NAME=__session` (Firebase strips other cookies) and
-`COOKIE_SECURE=true`. `MCP_ALLOWED_HOSTS` must include the public hostname.
-`docs/google-calendar.md` has the GCP walkthrough for two-way sync (on hold).
+Cloud Run (`server/Dockerfile`, context `./server`, image
+`kaiden122/elysiaa-neoma-server`) serves the API at
+`https://neoma-api.web.app` and `/api/**` through the client host (Vercel).
+Firebase Hosting (`firebase.json`, `.firebaserc`; project `elysiaa-api`, site
+`neoma-api`) proxies `/api/**`, `/mcp`, `/docs`, `/docs/**`, `/redoc`,
+`/openapi.json` and `/.well-known/**` to the `neoma` service in
+`asia-southeast1`. `MCP_ALLOWED_HOSTS` must include every public hostname.
+
+If the client is ever moved onto Firebase Hosting itself, the cookie caveat
+applies: Hosting strips every cookie except `__session` on Cloud Run rewrites,
+so production would need `SESSION_COOKIE_NAME=__session` and
+`COOKIE_SECURE=true`. `docs/google-calendar.md` has the GCP walkthrough for
+two-way sync.

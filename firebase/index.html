@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neoma API</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #eff1ec;
+        color: #171c1a;
+      }
+      main {
+        max-width: 34rem;
+        padding: 2rem;
+      }
+      h1 {
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin: 0 0 0.75rem;
+      }
+      p {
+        line-height: 1.6;
+        margin: 0 0 0.5rem;
+      }
+      code {
+        background: rgba(23, 28, 26, 0.08);
+        padding: 0.1rem 0.35rem;
+        border-radius: 4px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #171c1a;
+          color: #eff1ec;
+        }
+        code {
+          background: rgba(239, 241, 236, 0.12);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Neoma API</h1>
+      <p>This host proxies the Neoma API at <code>/api</code>.</p>
+      <p>The MCP endpoint lives at <code>/mcp</code> (bearer token required).</p>
+      <p>
+        OAuth discovery: <code>/.well-known/oauth-protected-resource/mcp</code>.
+      </p>
+    </main>
+  </body>
+</html>

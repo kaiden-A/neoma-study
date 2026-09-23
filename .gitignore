@@ -22,3 +22,7 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+
+# --- firebase --------------------------------------------------------------
+.firebase/
+firebase-debug.log

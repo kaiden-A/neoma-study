@@ -1,0 +1,59 @@
+{
+  "hosting": {
+    "site": "neoma-api",
+    "public": "firebase",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "neoma",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/mcp",
+        "run": {
+          "serviceId": "neoma",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/docs",
+        "run": {
+          "serviceId": "neoma",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/docs/**",
+        "run": {
+          "serviceId": "neoma",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/redoc",
+        "run": {
+          "serviceId": "neoma",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/openapi.json",
+        "run": {
+          "serviceId": "neoma",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/.well-known/**",
+        "run": {
+          "serviceId": "neoma",
+          "region": "asia-southeast1"
+        }
+      },
+      { "source": "**", "destination": "/index.html" }
+    ]
+  }
+}
