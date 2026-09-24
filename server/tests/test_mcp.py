@@ -1,6 +1,7 @@
 """The MCP endpoint, driven through the mounted route like a real client."""
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -27,13 +28,22 @@ def _post(client: TestClient, body: dict, token: str | None) -> Any:
 
 def _payload(result: dict) -> Any:
     """Schema-typed tools come back as structuredContent; list returns are
-    wrapped in {"result": [...]}; composite tools fall back to a text block."""
+    wrapped in {"result": [...]}; composite tools fall back to a text block.
+    The time middleware appends a `Now:` block, so scan for the first content
+    block that parses as JSON."""
     if "structuredContent" in result:
         structured = result["structuredContent"]
         if isinstance(structured, dict) and set(structured) == {"result"}:
             return structured["result"]
         return structured
-    return json.loads(result["content"][0]["text"])
+    for block in result.get("content", []):
+        if block.get("type") != "text":
+            continue
+        try:
+            return json.loads(block["text"])
+        except ValueError:
+            continue
+    raise AssertionError(f"no JSON content block in {result}")
 
 
 def _call(client: TestClient, name: str, arguments: dict, token: str) -> dict:
@@ -99,6 +109,7 @@ def test_initialize_and_tools_list(client: TestClient, mcp_env: User, mcp_key: s
         "create_note",
         "list_events",
         "daily_brief",
+        "now",
     } <= names
 
 
@@ -181,3 +192,61 @@ def test_zitadel_token_path_accepts_a_matching_subject(
 def test_api_routes_still_win_over_the_mount(client: TestClient) -> None:
     """The MCP mount is last, so /api/* keeps working."""
     assert client.get("/api/health").status_code == 200
+
+
+def test_tool_results_end_with_the_current_time(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    result = _call(client, "create_task", {"title": "Clock check"}, mcp_key)
+
+    assert result["content"][-1]["text"].startswith("Now: ")
+    assert _payload(result)["title"] == "Clock check"
+
+
+def test_tools_list_is_not_stamped(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    listed = _post(client, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, mcp_key)
+
+    assert listed.status_code == 200
+    assert "content" not in listed.json()["result"]
+
+
+def test_now_reports_the_configured_zone(
+    client: TestClient, mcp_env: User, mcp_key: str, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "default_timezone", "Asia/Kuala_Lumpur")
+
+    payload = _payload(_call(client, "now", {}, mcp_key))
+
+    assert payload["timezone"] == "Asia/Kuala_Lumpur"
+    assert payload["utcOffsetMinutes"] == 480
+    assert payload["startOfDayMs"] <= payload["unixMs"] < payload["endOfDayMs"]
+    assert payload["date"] == payload["local"][:10]
+    assert payload["weekday"]
+
+
+def test_now_accepts_an_iana_override(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    payload = _payload(_call(client, "now", {"timezone": "UTC"}, mcp_key))
+
+    assert payload["timezone"] == "UTC"
+    assert payload["utcOffsetMinutes"] == 0
+
+
+def test_now_rejects_an_unknown_zone(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    result = _call(client, "now", {"timezone": "Not/AZone"}, mcp_key)
+
+    assert result.get("isError") is True
+    assert "unknown timezone" in result["content"][0]["text"].lower()
+
+
+def test_read_tools_have_humanized_dates(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    due = int((datetime.now(UTC) + timedelta(days=1)).timestamp() * 1000)
+    _call(client, "create_task", {"title": "Iso check", "due_at": due}, mcp_key)
+
+    listed = _payload(_call(client, "list_tasks", {}, mcp_key))
+    assert listed[0]["dueAtIso"].endswith("Z")
+
+    upcoming = _payload(_call(client, "upcoming", {}, mcp_key))
+    assert upcoming[0]["atIso"].endswith("Z")
+    assert upcoming[0]["atLabel"]
+
+    brief = _payload(_call(client, "daily_brief", {}, mcp_key))
+    assert brief["now"]["unixMs"] > 0
+    assert brief["thisWeek"][0]["dueAtIso"].endswith("Z")

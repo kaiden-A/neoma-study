@@ -215,7 +215,7 @@ def test_editing_an_event_patches_its_twin(
     assert fake_google.deleted == ["g-1"]
 
 
-def test_group_events_invite_members(
+def test_group_events_push_without_attendees(
     client: TestClient, sign_in, make_user, db: DbSession, fake_google: FakeGoogle
 ) -> None:
     owner = make_user(db, name="Ada", email="ada@example.com")
@@ -231,7 +231,7 @@ def test_group_events_invite_members(
 
     client.post("/api/events", json=_future(title="Session", type="session", groupId=group["id"]))
 
-    assert fake_google.inserted[-1]["attendees"] == [{"email": "maya@example.com"}]
+    assert "attendees" not in fake_google.inserted[-1]
     assert "Group: Finals crew" in fake_google.inserted[-1]["description"]
 
 
@@ -303,6 +303,86 @@ def test_sync_imports_google_events_and_deletes_cancelled(
     assert db.scalar(select(Event).where(Event.google_event_id == "g-cancelled")) is None
     account = db.scalar(select(GoogleAccount))
     assert account is not None and account.sync_token == "sync-2"
+
+
+def test_sync_skips_hand_added_event_copies(
+    client: TestClient, sign_in, make_user, db: DbSession, fake_google: FakeGoogle
+) -> None:
+    """A copy made with the Add-to-Google button or an .ics is not re-imported."""
+    user = make_user(db)
+    event = Event(
+        owner_id=user.id,
+        title="Physics revision",
+        type=EventType.personal,
+        starts_at=datetime.now(UTC) + timedelta(days=1),
+        google_event_id="g-twin",
+    )
+    db.add(event)
+    db.commit()
+    _connect(db, user)
+    sign_in(user)
+    stamp = (datetime.now(UTC) + timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    fake_google.pages = [
+        {
+            "items": [
+                {
+                    "id": "g-copy",
+                    "status": "confirmed",
+                    "summary": "Physics revision",
+                    "description": f"Added from Neoma\nNeoma id: {event.id}",
+                    "start": {"dateTime": stamp},
+                    "end": {"dateTime": stamp},
+                    "updated": stamp,
+                }
+            ],
+            "nextSyncToken": "sync-2",
+        }
+    ]
+
+    result = client.post("/api/google/sync").json()
+
+    assert result["pulled"] == 0
+    assert db.scalar(select(Event).where(Event.google_event_id == "g-copy")) is None
+
+
+def test_sync_skips_hand_added_task_copies(
+    client: TestClient, sign_in, make_user, db: DbSession, fake_google: FakeGoogle
+) -> None:
+    user = make_user(db)
+    task = Task(
+        owner_id=user.id,
+        title="Lab report",
+        due_at=datetime.now(UTC) + timedelta(days=2),
+        google_event_id="g-task",
+    )
+    db.add(task)
+    db.commit()
+    _connect(db, user)
+    sign_in(user)
+    stamp = (datetime.now(UTC) + timedelta(days=3)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    fake_google.pages = [
+        {
+            "items": [
+                {
+                    "id": "g-copy",
+                    "status": "confirmed",
+                    "summary": "Lab report",
+                    "description": f"Neoma id: {task.id}",
+                    "start": {"dateTime": stamp},
+                    "end": {"dateTime": stamp},
+                    "updated": stamp,
+                }
+            ],
+            "nextSyncToken": "sync-2",
+        }
+    ]
+
+    result = client.post("/api/google/sync").json()
+
+    assert result["pulled"] == 0
+    assert db.scalar(select(Event).where(Event.google_event_id == "g-copy")) is None
+    db.refresh(task)
+    assert task.google_event_id == "g-task"
 
 
 def test_sync_restarts_when_the_cursor_expires(
@@ -387,7 +467,7 @@ def test_task_reminder_zero_silences_notifications(
     assert fake_google.inserted[-1]["reminders"] == {"useDefault": False, "overrides": []}
 
 
-def test_group_task_invites_assignees(
+def test_group_tasks_push_without_attendees(
     client: TestClient, sign_in, make_user, db: DbSession, fake_google: FakeGoogle
 ) -> None:
     owner = make_user(db, name="Ada", email="ada@example.com")
@@ -404,8 +484,32 @@ def test_group_task_invites_assignees(
     _create_task(client, title="Revise chapter 4", groupId=group["id"], assigneeIds=[str(member.id)])
 
     body = fake_google.inserted[-1]
-    assert body["attendees"] == [{"email": "maya@example.com"}]
+    assert "attendees" not in body
     assert "Group: Finals crew" in body["description"]
+
+
+def test_google_writes_never_ask_for_guest_emails() -> None:
+    """sendUpdates=none on every write, so Google sends no mail of its own."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        return httpx.Response(200, json={"id": "g-1"})
+
+    api = google_services.GoogleClient(
+        client_id="client",
+        client_secret="secret",
+        redirect_uri="http://localhost:8000/api/google/callback",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    api.insert_event("token", {"summary": "x"})
+    api.patch_event("token", "g-1", {"summary": "x"})
+    api.delete_event("token", "g-1")
+
+    assert [request.url.params.get("sendUpdates") for request in seen] == ["none", "none", "none"]
 
 
 def test_task_created_by_an_unconnected_member_uses_a_connected_assignee(

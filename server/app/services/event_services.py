@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..models import Event, GroupMember, User
 from ..schemas.events import EventCreate, EventOut, EventPatch
 from ..utils import from_ms, to_ms
-from . import access, google_services
+from . import access, email_services, google_services
 from .errors import InvalidError, NotFoundError
 
 MISSING_EVENT = "That event is gone."
@@ -105,12 +105,23 @@ def create_event(db: DbSession, user: User, data: EventCreate) -> EventOut:
     db.commit()
     db.refresh(event)
     google_services.push_event(db, user, event)
-    return event_out(event)
+    payload = event_out(event)
+    if event.group_id is not None:
+        email_services.send_session_notice(
+            db,
+            actor=user,
+            event=payload,
+            variant="created",
+            recipient_ids=access.member_ids(db, event.group_id),
+        )
+    return payload
 
 
 def update_event(db: DbSession, user: User, event_id: uuid.UUID, patch: EventPatch) -> EventOut:
     event = require_event(db, user, event_id)
     fields = patch.model_fields_set
+    previous_starts = event.starts_at
+    previous_ends = event.ends_at
     if "title" in fields and patch.title is not None:
         event.title = patch.title.strip()
     if "type" in fields and patch.type is not None:
@@ -135,14 +146,29 @@ def update_event(db: DbSession, user: User, event_id: uuid.UUID, patch: EventPat
     db.commit()
     db.refresh(event)
     google_services.push_event(db, user, event)
-    return event_out(event)
+    payload = event_out(event)
+    if event.group_id is not None and (event.starts_at != previous_starts or event.ends_at != previous_ends):
+        email_services.send_session_notice(
+            db,
+            actor=user,
+            event=payload,
+            variant="moved",
+            recipient_ids=access.member_ids(db, event.group_id),
+        )
+    return payload
 
 
 def delete_event(db: DbSession, user: User, event_id: uuid.UUID) -> None:
     event = require_event(db, user, event_id)
     google_services.delete_event_twin(db, user, event)
+    snapshot = event_out(event)
+    recipient_ids = access.member_ids(db, event.group_id) if event.group_id is not None else []
     db.delete(event)
     db.commit()
+    if recipient_ids:
+        email_services.send_session_notice(
+            db, actor=user, event=snapshot, variant="cancelled", recipient_ids=recipient_ids
+        )
 
 
 def upcoming_session_for_group(

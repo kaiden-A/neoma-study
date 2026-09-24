@@ -16,6 +16,14 @@ PRODID = "-//Neoma//Study OS//EN"
 CALENDAR_NAME = "Neoma — Study"
 DEFAULT_BLOCK_MINUTES = 30
 DEFAULT_REMINDER_MINUTES = 60
+# Every copy the Add-to-Google button or an .ics export produces carries this,
+# so a later sync can tell a hand-added copy from a new event (see
+# google_services._apply_item).
+MARKER_PREFIX = "Neoma id:"
+
+
+def marker_line(neoma_id: str) -> str:
+    return f"{MARKER_PREFIX} {neoma_id}"
 
 
 def stamp(value: datetime) -> str:
@@ -55,11 +63,14 @@ def _event_lines(
     notes: str,
     reminder_minutes: int | None,
     now: datetime,
+    neoma_id: str | None = None,
 ) -> list[str]:
     end = ends_at or (starts_at + timedelta(minutes=DEFAULT_BLOCK_MINUTES))
     description_parts = [f"Group: {group_name}"] if group_name else []
     if notes:
         description_parts.append(notes)
+    if neoma_id:
+        description_parts.append(marker_line(neoma_id))
     lines = [
         "BEGIN:VEVENT",
         f"UID:{uid}",
@@ -116,6 +127,7 @@ def event_block(event: EventOut, group_name: str, *, now: datetime | None = None
         notes=event.notes,
         reminder_minutes=event.reminderMinutes,
         now=moment,
+        neoma_id=event.id,
     )
 
 
@@ -131,8 +143,9 @@ def task_block(task: Task, group_name: str, *, now: datetime | None = None) -> l
         group_name=group_name,
         location="",
         notes="",
-        reminder_minutes=DEFAULT_REMINDER_MINUTES,
+        reminder_minutes=task.reminder_minutes,
         now=moment,
+        neoma_id=str(task.id),
     )
 
 
@@ -176,10 +189,13 @@ def google_url(
     ends_at: datetime | None,
     group_name: str,
     location: str,
+    neoma_id: str | None = None,
 ) -> str:
     end = ends_at or (starts_at + timedelta(minutes=DEFAULT_BLOCK_MINUTES))
     details_parts = [f"Group: {group_name}"] if group_name else []
     details_parts.append("Added from Neoma")
+    if neoma_id:
+        details_parts.append(marker_line(neoma_id))
     params = {
         "action": "TEMPLATE",
         "text": title,
@@ -189,3 +205,16 @@ def google_url(
     if location:
         params["location"] = location
     return f"https://calendar.google.com/calendar/render?{urlencode(params)}"
+
+
+def task_google_url(task: Task, group_name: str) -> str | None:
+    if task.due_at is None:
+        return None
+    return google_url(
+        title=task.title,
+        starts_at=task.due_at,
+        ends_at=None,
+        group_name=group_name,
+        location="",
+        neoma_id=str(task.id),
+    )

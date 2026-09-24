@@ -15,6 +15,7 @@ from app.dependencies import get_storage, get_zitadel
 from app.main import app
 from app.models import User
 from app.models.enums import UserKind
+from app.services import email_services
 from app.services.auth_services import create_session
 from app.services.storage_services import Storage
 
@@ -217,6 +218,31 @@ def fake_idp() -> FakeZitadel:
 def idp_client(client: TestClient, fake_idp: FakeZitadel) -> TestClient:
     app.dependency_overrides[get_zitadel] = lambda: fake_idp
     return client
+
+
+@pytest.fixture
+def sent_emails(monkeypatch) -> list[dict]:
+    """Stands in for the Resend call; the email_log row is still written."""
+    calls: list[dict] = []
+
+    def fake_deliver(
+        *, to: str, subject: str, html: str, text: str, attachments: list[dict] | None = None
+    ) -> str:
+        calls.append(
+            {
+                "to": to,
+                "subject": subject,
+                "html": html,
+                "text": text,
+                "attachments": attachments or [],
+            }
+        )
+        return f"fake-{len(calls)}"
+
+    monkeypatch.setattr(email_services, "_deliver", fake_deliver)
+    monkeypatch.setattr(settings, "resend_api_key", "test-key")
+    monkeypatch.setattr(settings, "email_from", "Neoma <test@example.com>")
+    return calls
 
 
 @pytest.fixture

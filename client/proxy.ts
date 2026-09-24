@@ -8,9 +8,17 @@ const PROTECTED = ["/today", "/groups", "/vault", "/calendar", "/settings"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const session = req.cookies.get(SESSION_COOKIE)?.value;
+  // A signed-in visitor never needs the marketing page again.
+  if (pathname === "/" && session) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/today";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
   const guarded = PROTECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (!guarded) return NextResponse.next();
-  if (req.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
+  if (session) return NextResponse.next();
 
   const url = req.nextUrl.clone();
   url.pathname = "/login";

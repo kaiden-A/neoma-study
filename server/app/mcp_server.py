@@ -6,7 +6,10 @@ tokens (issuer + JWKS signature), mapping their subject to a member through
 """
 
 import secrets
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import anyio
 import jwt
@@ -14,7 +17,9 @@ from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import CallToolResult, TextContent
 from pydantic import AnyHttpUrl
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -122,6 +127,58 @@ def current_user(db: DbSession) -> User:
     return user
 
 
+def default_zone() -> ZoneInfo:
+    """The configured timezone, or UTC when the setting is not a real one."""
+    try:
+        return ZoneInfo(get_settings().default_timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
+
+
+def _offset_label(moment: datetime) -> str:
+    total = int((moment.utcoffset() or timedelta(0)).total_seconds())
+    sign = "+" if total >= 0 else "-"
+    total = abs(total)
+    return f"{sign}{total // 3600:02d}:{(total % 3600) // 60:02d}"
+
+
+def now_line(moment: datetime | None = None) -> str:
+    zone = default_zone()
+    local = (moment or datetime.now(UTC)).astimezone(zone)
+    return (
+        f"Now: {local:%a %d %b %Y, %H:%M} ({_offset_label(local)}, {zone.key})"
+        f" · {local.astimezone(UTC).isoformat().replace('+00:00', 'Z')}"
+        f" · {int(local.timestamp() * 1000)}"
+    )
+
+
+class TimeContextMiddleware:
+    """Appends the current time as the last content block of every tool call.
+
+    The model has no clock, so each result ends with a `Now: ...` line while
+    `content[0]` stays the tool's own payload. Only `tools/call` is touched.
+    """
+
+    async def __call__(self, ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
+        result = await call_next(ctx)
+        if ctx.method != "tools/call":
+            return result
+        block = TextContent(type="text", text=now_line())
+        if isinstance(result, CallToolResult):
+            if result.result_type == "input_required":
+                return result
+            result.content = [*result.content, block]
+            return result
+        if isinstance(result, dict) and result.get("resultType") != "input_required":
+            content = result.get("content")
+            if isinstance(content, list):
+                return {
+                    **result,
+                    "content": [*content, block.model_dump(mode="json", exclude_none=True)],
+                }
+        return result
+
+
 mcp = MCPServer(
     "neoma",
     title="Neoma",
@@ -129,8 +186,11 @@ mcp = MCPServer(
     instructions=(
         "Neoma is a study OS: group projects with shared task boards, study groups with shared "
         "notes, a personal vault and one calendar. Tools act as the signed-in member and only "
-        "touch data that member can see. Destructive tools say so in their annotations."
+        "touch data that member can see. Destructive tools say so in their annotations. "
+        "Every tool result ends with a `Now: ...` line giving the current time; timestamps in "
+        "payloads are unix milliseconds UTC."
     ),
+    middleware=[TimeContextMiddleware()],
     token_verifier=AppTokenVerifier(),
     auth=AuthSettings(
         issuer_url=AnyHttpUrl(settings.zitadel_issuer.rstrip("/")),

@@ -100,11 +100,15 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
 - Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.
   Google Calendar sync lives in `services/google_services.py` (`google_accounts`,
   `events.google_event_id`, `tasks.google_event_id`/`google_account_id`): OAuth
-  connect, best-effort push (group events invite members; tasks invite assignees
-  and use `tasks.reminder_minutes`), incremental pull via `syncToken`; driven by
+  connect, best-effort invite-free push (no attendees, `sendUpdates=none`; tasks
+  use `tasks.reminder_minutes`), incremental pull via `syncToken` that skips
+  hand-added copies carrying a `Neoma id:` marker; driven by
   `scripts/sync_google.py` / `POST /api/maintenance/sync-google`. The client
   auto-syncs once a day (`?auto=true`); tokens are encrypted with a key derived
-  from `APP_SECRET`, so rotating it forces reconnects.
+  from `APP_SECRET`, so rotating it forces reconnects. Assignments, due-date
+  moves and group sessions notify by Neoma's own email (`.ics` attached +
+  Add-to-Google button) instead of Google invitations — see
+  `email_services.send_task_*` / `send_session_notice`.
 - Notifications are derived, never stored: `services/notification_services.py`
   (keys like `overdue:{task}`, `due:{task}:{lead}`); only read/snooze state persists.
 - Email: one digest per user per day (`reminder_services.send_reminders`,
@@ -113,6 +117,9 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
 - Data: `GET /api/export`, `POST /api/import`, `POST /api/demo` (sample semester),
   `DELETE /api/demo` (deletes everything the caller owns).
 - MCP: `app/mcp_server.py` + `app/mcp_tools.py`, mounted last; `GET /mcp` is 405.
+  Every tool result ends with a `Now: ...` line (TimeContextMiddleware in
+  `mcp_server.py`, driven by `DEFAULT_TIMEZONE`; tzdata is a dependency) and
+  `neoma.now` reports the clock on demand.
 
 ## Deploy notes
 

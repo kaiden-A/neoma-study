@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..models import GroupMember, Task, TaskAssignee, TaskLink, TaskStatus, TaskSubtask, User
 from ..schemas.tasks import SubtaskIn, SubtaskOut, TaskCreate, TaskLinkIn, TaskLinkOut, TaskOut, TaskPatch
 from ..utils import from_ms, to_ms
-from . import access, google_services
+from . import access, email_services, google_services
 from .errors import InvalidError, NotFoundError
 
 MISSING_TASK = "We could not find that task."
@@ -110,6 +110,9 @@ def _apply_assignees(db: DbSession, user: User, task: Task, assignee_ids: list[s
         access.require_members_of(db, task.group_id, wanted)
     for row in list(task.assignees):
         db.delete(row)
+    # Flush the deletes before inserting, or re-assigning the same people trips
+    # uq_task_assignees_task_user.
+    db.flush()
     for user_id in dict.fromkeys(wanted):
         db.add(TaskAssignee(task_id=task.id, user_id=user_id))
 
@@ -165,12 +168,17 @@ def create_task(db: DbSession, user: User, data: TaskCreate) -> TaskOut:
     db.commit()
     db.refresh(task)
     google_services.push_task(db, user, task)
+    email_services.send_task_assignment(
+        db, actor=user, task=task, recipient_ids=[row.user_id for row in task.assignees]
+    )
     return task_out(task)
 
 
 def update_task(db: DbSession, user: User, task_id: uuid.UUID, patch: TaskPatch) -> TaskOut:
     task = require_task(db, user, task_id)
     fields = patch.model_fields_set
+    previous_due = task.due_at
+    previous_assignees = {row.user_id for row in task.assignees}
 
     if "groupId" in fields and patch.groupId != (str(task.group_id) if task.group_id else None):
         if patch.groupId:
@@ -210,6 +218,12 @@ def update_task(db: DbSession, user: User, task_id: uuid.UUID, patch: TaskPatch)
     db.commit()
     db.refresh(task)
     google_services.push_task(db, user, task)
+    current_assignees = [row.user_id for row in task.assignees]
+    added = [user_id for user_id in current_assignees if user_id not in previous_assignees]
+    if added:
+        email_services.send_task_assignment(db, actor=user, task=task, recipient_ids=added)
+    if task.due_at != previous_due:
+        email_services.send_task_moved(db, actor=user, task=task, recipient_ids=current_assignees)
     return task_out(task)
 
 
@@ -223,6 +237,7 @@ def delete_task(db: DbSession, user: User, task_id: uuid.UUID) -> None:
 def postpone_task(db: DbSession, user: User, task_id: uuid.UUID, timezone_offset_minutes: int) -> TaskOut:
     """+1 calendar day preserving clock time; undated tasks get tomorrow 09:00."""
     task = require_task(db, user, task_id)
+    previous_due = task.due_at
     if task.due_at is not None:
         task.due_at = task.due_at + timedelta(days=1)
     else:
@@ -233,6 +248,10 @@ def postpone_task(db: DbSession, user: User, task_id: uuid.UUID, timezone_offset
     db.commit()
     db.refresh(task)
     google_services.push_task(db, user, task)
+    if task.due_at != previous_due:
+        email_services.send_task_moved(
+            db, actor=user, task=task, recipient_ids=[row.user_id for row in task.assignees]
+        )
     return task_out(task)
 
 
@@ -260,4 +279,7 @@ def duplicate_task(db: DbSession, user: User, task_id: uuid.UUID) -> TaskOut:
     db.commit()
     db.refresh(copy)
     google_services.push_task(db, user, copy)
+    email_services.send_task_assignment(
+        db, actor=user, task=copy, recipient_ids=[row.user_id for row in copy.assignees]
+    )
     return task_out(copy)

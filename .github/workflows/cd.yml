@@ -1,0 +1,63 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'server/**'
+
+env:
+  DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/${{ vars.APP_NAME }}
+  GCP_REGION: asia-southeast1
+  CLOUD_RUN_SERVICE: ${{ vars.APP_NAME }}
+
+jobs:
+  deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Set image tag to short commit SHA
+      - name: Set image tag
+        id: tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      # 3. Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 4. Build and push Docker image
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.tag.outputs.IMAGE_TAG }}
+            ${{ env.DOCKERHUB_IMAGE }}:latest
+
+      # 5. Authenticate to GCP
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # 6. Deploy to Cloud Run
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.CLOUD_RUN_SERVICE }}
+          region: ${{ env.GCP_REGION }}
+          image: ${{ env.DOCKERHUB_IMAGE }}:${{ steps.tag.outputs.IMAGE_TAG }}
+
+      # 7. Print the deployed URL
+      - name: Show deployed URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"

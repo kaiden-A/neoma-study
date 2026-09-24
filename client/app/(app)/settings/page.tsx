@@ -411,8 +411,8 @@ export default function SettingsPage() {
               </a>
             </div>
             <p className="nm-help">
-              Events sync both ways, and Google sends the reminders. Group events invite the other members, so
-              they land on their calendars too.
+              Events sync both ways. Neoma emails you about assignments and group sessions, with an .ics
+              attached; Google never sends the invitations.
             </p>
           </div>
         </section>

@@ -1,0 +1,18 @@
+{% if heading %}{{ heading }}{% endif %}
+
+{{ task_title }}{% if group_name %} · {{ group_name }}{% endif %}
+Due: {{ when_label or "No due date" }}
+Priority: {{ priority_label }}
+{% if description %}
+
+{{ description }}
+{% endif %}
+
+Open in Neoma: {{ open_url }}
+{% if google_url %}Add to Google Calendar: {{ google_url }}
+{% endif %}{% if attached %}The deadline is attached as an .ics file.
+{% endif %}Change what lands in your inbox: {{ settings_url }}
+
+--
+This is an automated notice from Neoma about a task you are assigned to.
+Neoma · Study OS

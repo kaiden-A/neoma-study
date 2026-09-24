@@ -8,6 +8,7 @@ on purpose: a Google outage must never fail a user's request.
 import base64
 import hashlib
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -19,7 +20,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from ..config import Settings, get_settings
-from ..models import Event, GoogleAccount, Group, GroupMember, Task, TaskAssignee, TaskStatus, User
+from ..models import Event, GoogleAccount, Group, Task, TaskAssignee, TaskStatus, User
 from ..models.enums import EventType
 from ..models.users import utcnow
 from ..utils import to_ms
@@ -141,7 +142,7 @@ class GoogleClient:
     def insert_event(self, access_token: str, body: dict) -> dict:
         response = self.http.post(
             f"{CALENDAR_API}/calendars/primary/events",
-            params={"sendUpdates": "all"},
+            params={"sendUpdates": "none"},
             json=body,
             headers=_headers(access_token),
         )
@@ -151,7 +152,7 @@ class GoogleClient:
     def patch_event(self, access_token: str, google_event_id: str, body: dict) -> dict:
         response = self.http.patch(
             f"{CALENDAR_API}/calendars/primary/events/{google_event_id}",
-            params={"sendUpdates": "all"},
+            params={"sendUpdates": "none"},
             json=body,
             headers=_headers(access_token),
         )
@@ -161,7 +162,7 @@ class GoogleClient:
     def delete_event(self, access_token: str, google_event_id: str) -> None:
         response = self.http.delete(
             f"{CALENDAR_API}/calendars/primary/events/{google_event_id}",
-            params={"sendUpdates": "all"},
+            params={"sendUpdates": "none"},
             headers=_headers(access_token),
         )
         if response.status_code in (404, 410):
@@ -347,7 +348,7 @@ def _push_event(db: DbSession, user: User, event: Event) -> None:
     if token is None:
         return
     api = client(settings)
-    body = _event_body(db, event, _attendee_emails(db, event, owner))
+    body = _event_body(db, event)
     if event.google_event_id:
         try:
             api.patch_event(token, event.google_event_id, body)
@@ -379,7 +380,7 @@ def _push_task(db: DbSession, user: User, task: Task) -> None:
     if token is None:
         return
     api = client(settings)
-    body = _task_body(db, task, _task_attendance(db, task, account))
+    body = _task_body(db, task)
     if task.google_event_id:
         try:
             api.patch_event(token, task.google_event_id, body)
@@ -431,21 +432,7 @@ def _task_involved(db: DbSession, task: Task) -> list[User]:
     return people
 
 
-def _task_attendance(db: DbSession, task: Task, organizer: GoogleAccount) -> list[str]:
-    organizer_email = (organizer.email or "").strip().lower()
-    emails: list[str] = []
-    seen: set[str] = set()
-    for person in _task_involved(db, task):
-        email = (person.email or "").strip()
-        key = email.lower()
-        if not email or key == organizer_email or key in seen:
-            continue
-        seen.add(key)
-        emails.append(email)
-    return emails
-
-
-def _task_body(db: DbSession, task: Task, attendees: list[str]) -> dict:
+def _task_body(db: DbSession, task: Task) -> dict:
     assert task.due_at is not None  # guaranteed by the caller
     end = task.due_at + timedelta(minutes=ics_services.DEFAULT_BLOCK_MINUTES)
     summary = f"✓ {task.title}" if task.status is TaskStatus.done else task.title
@@ -471,8 +458,6 @@ def _task_body(db: DbSession, task: Task, attendees: list[str]) -> dict:
     }
     if description_parts:
         body["description"] = "\n".join(description_parts)
-    if attendees:
-        body["attendees"] = [{"email": email} for email in attendees]
     return body
 
 
@@ -594,6 +579,11 @@ def _apply_item(db: DbSession, account: GoogleAccount, item: dict, *, dry_run: b
     if task is not None:
         return _apply_task_item(task, item, dry_run=dry_run)
     existing = db.scalar(select(Event).where(Event.google_event_id == google_id))
+    # A copy added by hand (button or .ics) points back at its Neoma row; it is
+    # not a new event, so importing it would duplicate that row.
+    marker = _marker_id(item.get("description"))
+    if marker is not None and (db.get(Task, marker) is not None or db.get(Event, marker) is not None):
+        return False
     if item.get("status") == "cancelled":
         if existing is None:
             return False
@@ -665,7 +655,23 @@ def _clean_task_summary(value: str | None) -> str:
     return value.removeprefix("✓").strip()
 
 
-def _event_body(db: DbSession, event: Event, attendees: list[str]) -> dict:
+_MARKER_RE = re.compile(rf"{re.escape(ics_services.MARKER_PREFIX)}\s*([0-9a-fA-F-]{{36}})")
+
+
+def _marker_id(description: str | None) -> uuid.UUID | None:
+    """The Neoma row a hand-added copy points back at, if any."""
+    if not description:
+        return None
+    match = _MARKER_RE.search(description)
+    if match is None:
+        return None
+    try:
+        return uuid.UUID(match.group(1))
+    except ValueError:
+        return None
+
+
+def _event_body(db: DbSession, event: Event) -> dict:
     end = event.ends_at
     if end is None or end <= event.starts_at:
         end = event.starts_at + timedelta(minutes=ics_services.DEFAULT_BLOCK_MINUTES)
@@ -687,21 +693,7 @@ def _event_body(db: DbSession, event: Event, attendees: list[str]) -> dict:
         body["description"] = "\n".join(description_parts)
     if event.location:
         body["location"] = event.location
-    if attendees:
-        body["attendees"] = [{"email": email} for email in attendees]
     return body
-
-
-def _attendee_emails(db: DbSession, event: Event, owner: User | None) -> list[str]:
-    if event.group_id is None:
-        return []
-    owner_email = (owner.email or "").lower() if owner else ""
-    rows = db.scalars(
-        select(User.email)
-        .join(GroupMember, GroupMember.user_id == User.id)
-        .where(GroupMember.group_id == event.group_id, User.email.is_not(None))
-    ).all()
-    return [email for email in rows if email and email.lower() != owner_email]
 
 
 def _write_google_settings(

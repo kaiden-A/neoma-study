@@ -1,0 +1,21 @@
+{% if heading %}{{ heading }}{% endif %}
+
+{{ event_title }}{% if group_name %} · {{ group_name }}{% endif %}
+{% if cancelled %}Was scheduled: {{ when_label }}{% else %}When: {{ when_label }}{% endif %}
+{% if location %}Where: {{ location }}
+{% endif %}
+{% if cancelled %}
+It is off the Neoma calendar. If you added it to yours, you can remove it there too.
+{% elif notes %}
+
+{{ notes }}
+{% endif %}
+
+Open in Neoma: {{ open_url }}
+{% if google_url %}Add to Google Calendar: {{ google_url }}
+{% endif %}{% if attached %}The session is attached as an .ics file.
+{% endif %}Change what lands in your inbox: {{ settings_url }}
+
+--
+This is an automated notice from Neoma about a session in one of your groups.
+Neoma · Study OS

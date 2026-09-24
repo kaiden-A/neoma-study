@@ -1,6 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
@@ -8,24 +7,10 @@ from app.config import get_settings
 from app.models import EmailLog, GroupMember, NotificationState
 from app.models import Session as SessionRow
 from app.models.enums import GroupRole
-from app.services import email_services, reminder_services
+from app.services import reminder_services
 
 settings = get_settings()
 MS_HOUR = 3_600_000
-
-
-@pytest.fixture
-def sent_emails(monkeypatch) -> list[dict]:
-    calls: list[dict] = []
-
-    def fake_deliver(*, to: str, subject: str, html: str, text: str) -> str:
-        calls.append({"to": to, "subject": subject, "html": html, "text": text})
-        return f"fake-{len(calls)}"
-
-    monkeypatch.setattr(email_services, "_deliver", fake_deliver)
-    monkeypatch.setattr(settings, "resend_api_key", "test-key")
-    monkeypatch.setattr(settings, "email_from", "Neoma <test@example.com>")
-    return calls
 
 
 def _task(client: TestClient, **overrides) -> dict:

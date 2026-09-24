@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     cleanup_secret: str = ""
     api_base_url: str = "http://localhost:8000"
     public_base_url: str = "http://localhost:3000"
+    # The server's single timezone (IANA name): MCP tool results report
+    # "now" in it, and read tools add human-readable local labels.
+    default_timezone: str = "Asia/Kuala_Lumpur"
 
     zitadel_issuer: str = "https://<instance>.zitadel.cloud"
     zitadel_client_id: str = ""

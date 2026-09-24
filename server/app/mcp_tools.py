@@ -8,14 +8,14 @@ runs as the member the verifier resolved for the request.
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from .mcp_server import current_user, get_session, mcp
+from .mcp_server import current_user, default_zone, get_session, mcp
 from .models import TaskStatus
-from .schemas.events import EventOut
 from .schemas.groups import GroupOut
 from .schemas.notes import GroupNoteCreate, NoteCreate, NoteOut, NotePatch
 from .schemas.tasks import TaskCreate, TaskOut, TaskPatch
@@ -47,6 +47,60 @@ def _uuid(value: str, what: str) -> uuid.UUID:
         raise ToolError(f"That {what} id is not valid.") from exc
 
 
+def _zone(name: str | None) -> ZoneInfo:
+    if not name:
+        return default_zone()
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ToolError(f"Unknown timezone {name!r}. Use an IANA name, e.g. Asia/Kuala_Lumpur.") from exc
+
+
+def _iso(ms: int | None) -> str | None:
+    if ms is None:
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat().replace("+00:00", "Z")
+
+
+def _label(ms: int | None) -> str | None:
+    if ms is None:
+        return None
+    local = datetime.fromtimestamp(ms / 1000, tz=UTC).astimezone(default_zone())
+    return f"{local:%a %d %b, %H:%M}"
+
+
+def _offset_minutes(moment: datetime) -> int:
+    return int((moment.utcoffset() or timedelta(0)).total_seconds() // 60)
+
+
+def _now_report(zone: ZoneInfo) -> dict:
+    moment = datetime.now(UTC).astimezone(zone)
+    start = moment.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return {
+        "utc": moment.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+        "unixMs": int(moment.timestamp() * 1000),
+        "timezone": zone.key,
+        "local": moment.isoformat(),
+        "date": f"{moment:%Y-%m-%d}",
+        "time": f"{moment:%H:%M}",
+        "weekday": f"{moment:%A}",
+        "utcOffsetMinutes": _offset_minutes(moment),
+        "startOfDayMs": int(start.timestamp() * 1000),
+        "endOfDayMs": int(end.timestamp() * 1000),
+    }
+
+
+@mcp.tool(annotations=READ_ONLY)
+def now(
+    timezone: Annotated[
+        str | None, Field(description="IANA zone to report in; defaults to the server's.")
+    ] = None,
+) -> dict:
+    """The current time, so dates and deadlines can be reasoned about."""
+    return _now_report(_zone(timezone))
+
+
 @mcp.tool(annotations=READ_ONLY)
 def list_groups() -> list[GroupOut]:
     """List every group the signed-in member belongs to, with members and topics."""
@@ -62,7 +116,7 @@ def list_tasks(
     due_before: Annotated[
         int | None, Field(description="Only tasks due before this (ms since epoch).")
     ] = None,
-) -> list[TaskOut]:
+) -> list[dict]:
     """List tasks the member can see: their own to-dos and their groups' tasks."""
     with get_session() as db:
         user = current_user(db)
@@ -80,7 +134,7 @@ def list_tasks(
             status=parsed_status,
             due_before=due,
         )
-        return tasks
+        return [{**task.model_dump(mode="json"), "dueAtIso": _iso(task.dueAt)} for task in tasks]
 
 
 @mcp.tool(annotations=MUTATING)
@@ -180,6 +234,9 @@ def upcoming(
             for event in events
         )
         merged.sort(key=lambda item: item["at"] or 0)
+        for item in merged:
+            item["atIso"] = _iso(item["at"])
+            item["atLabel"] = _label(item["at"])
         return merged
 
 
@@ -262,7 +319,7 @@ def list_events(
     to_ms: Annotated[
         int | None, Field(description="Only events starting before this (ms since epoch).")
     ] = None,
-) -> list[EventOut]:
+) -> list[dict]:
     """Calendar events the member can see, soonest first."""
     with get_session() as db:
         user = current_user(db)
@@ -272,7 +329,14 @@ def list_events(
             starts_from=datetime.fromtimestamp(from_ms / 1000, tz=UTC) if from_ms else None,
             starts_to=datetime.fromtimestamp(to_ms / 1000, tz=UTC) if to_ms else None,
         )
-        return events
+        return [
+            {
+                **event.model_dump(mode="json"),
+                "startsAtIso": _iso(event.startsAt),
+                "endsAtIso": _iso(event.endsAt),
+            }
+            for event in events
+        ]
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -292,10 +356,22 @@ def daily_brief() -> dict:
             if task.dueAt
             and int(now.timestamp() * 1000) <= task.dueAt <= int(end_of_today.timestamp() * 1000)
         ]
+
+        def task_dict(task: TaskOut) -> dict:
+            return {**task.model_dump(mode="json"), "dueAtIso": _iso(task.dueAt)}
+
         return {
+            "now": _now_report(default_zone()),
             "generatedAt": int(now.timestamp() * 1000),
-            "overdue": [task.model_dump(mode="json") for task in overdue],
-            "dueToday": [task.model_dump(mode="json") for task in today],
-            "thisWeek": [task.model_dump(mode="json") for task in tasks],
-            "events": [event.model_dump(mode="json") for event in events],
+            "overdue": [task_dict(task) for task in overdue],
+            "dueToday": [task_dict(task) for task in today],
+            "thisWeek": [task_dict(task) for task in tasks],
+            "events": [
+                {
+                    **event.model_dump(mode="json"),
+                    "startsAtIso": _iso(event.startsAt),
+                    "endsAtIso": _iso(event.endsAt),
+                }
+                for event in events
+            ],
         }

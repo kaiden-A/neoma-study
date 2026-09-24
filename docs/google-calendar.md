@@ -1,22 +1,25 @@
 # Google Calendar
 
 Two-way sync is built. Events created or edited in Neoma are pushed to the
-owner's Google Calendar (best-effort), edits made in Google are pulled back on
-the next sync, and Google sends the reminders — Neoma does not need its own
-notification path for synced events.
+owner's Google Calendar (best-effort), and edits made in Google are pulled back
+on the next sync. Google is never asked to invite anyone on Neoma's behalf:
+assignments and group sessions are announced by Neoma's own email (Resend) with
+an `.ics` attached and an **Add to Google Calendar** button.
 
-Group events are delivered by Google itself: the event is pushed once, with the
-other group members as attendees, so Google emails the invitations and puts it
-on their calendars. Each row carries one `google_event_id`; pulling skips an id
-already mapped locally, so an invitation never shows up twice.
+Group events are pushed once, without attendees, so they land on the
+organizer's calendar only; the other members hear about the session through
+Neoma's email. Each row carries one `google_event_id`; pulling skips an id
+already mapped locally, so the API copy never shows up twice. Copies people add
+by hand (the email button or the `.ics`) carry a `Neoma id: <uuid>` marker in
+their description — the pull skips an item whose marker points at an existing
+Neoma row, so those copies are not imported as duplicates.
 
 Tasks with a due date sync the same way, using the same mechanic: the task
 becomes a Google event (30-minute block at the due time) organised by the first
-connected person involved — creator first, then assignees — with the other
-people as attendees. Each task carries its own `reminder_minutes`, which sets
-the Google notification; completing a task retitles the event `✓ …` and
-silences it. Dragging the event in Google moves the task's due date on the next
-sync. Tasks without a due date never reach Google.
+connected person involved — creator first, then assignees. Each task carries its
+own `reminder_minutes`, which sets the Google notification; completing a task
+retitles the event `✓ …` and silences it. Dragging the event in Google moves the
+task's due date on the next sync. Tasks without a due date never reach Google.
 
 The client syncs in the background once per page load, and at most once a day
 per user (`lastSyncAt` is not today, local time), right after connecting. The
@@ -69,7 +72,13 @@ Then apply the migration: `uv run --directory server alembic upgrade head`.
   redirects to `/settings?google=connected`.
 - **Push** happens in `event_services` and `task_services` after
   create/update/delete. It is best-effort: a Google outage logs a warning and
-  never fails the request.
+  never fails the request. Every write sends `sendUpdates=none`, and no body
+  carries `attendees`, so Google never emails a guest.
+- **Notices** (Resend, best-effort): a task assignment or due-date move and a
+  group session create/move/cancel render `task.html` / `session.html` with the
+  `.ics` attached and an Add-to-Google button. Recipients can switch these off
+  per kind in Settings; the actor is never emailed, and cancellations only go to
+  people who received the original notice.
 - **Pull** runs through `google_services.sync_account`: an initial window of
   90 days back / 1 year ahead, then incremental via `events.list` `syncToken`
   (410 → full resync). Last write wins on `updated`; cancelled events delete
@@ -93,8 +102,9 @@ Then apply the migration: `uv run --directory server alembic upgrade head`.
   applies. The consent screen shows an "unverified app" warning.
 - Set the production redirect URI in the same OAuth client and in
   `GOOGLE_REDIRECT_URI`.
-- Group event and task invitations assume a member's Neoma email is their
-  Google address; if it is not, they still see the item in Neoma. A task's
-  reminder setting applies to the organizer's copy; attendees get their own
-  Google default notifications, and the invitation email itself is a ping.
+- Group event and task notices do not depend on Google at all: they go to the
+  member's Neoma email. The Google copy belongs to the organizer, whose task
+  reminder setting drives Google's popup; people who add the `.ics` or use the
+  button get the reminder baked into the file. Copies added by hand are ignored
+  on the next pull thanks to the `Neoma id:` marker.
 - The refresh token is encrypted at rest; treat `APP_SECRET` like a password.

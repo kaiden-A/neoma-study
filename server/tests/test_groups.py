@@ -1,31 +1,15 @@
 import io
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
 from app.models import Group, GroupMember, User
 from app.models.enums import GroupRole
-from app.services import auth_services, email_services
+from app.services import auth_services
 
 settings = get_settings()
-
-
-@pytest.fixture
-def sent_emails(monkeypatch) -> list[dict]:
-    """Stands in for the Resend call; the email_log row is still written."""
-    calls: list[dict] = []
-
-    def fake_deliver(*, to: str, subject: str, html: str, text: str) -> str:
-        calls.append({"to": to, "subject": subject, "html": html, "text": text})
-        return f"fake-{len(calls)}"
-
-    monkeypatch.setattr(email_services, "_deliver", fake_deliver)
-    monkeypatch.setattr(settings, "resend_api_key", "test-key")
-    monkeypatch.setattr(settings, "email_from", "Neoma <test@example.com>")
-    return calls
 
 
 def _create_group(client: TestClient, **overrides) -> dict:

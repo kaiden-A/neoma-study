@@ -88,6 +88,7 @@ def google_link(
             ends_at=event.ends_at,
             group_name=group_name,
             location=event.location,
+            neoma_id=str(event.id),
         )
     }
 
