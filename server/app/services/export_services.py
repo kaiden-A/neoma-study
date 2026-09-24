@@ -34,7 +34,7 @@ from ..models import (
     User,
 )
 from ..utils import from_ms, to_ms
-from . import access
+from . import access, file_services, storage_services
 from .errors import InvalidError
 
 EXPORT_VERSION = 1
@@ -183,7 +183,9 @@ def _uuid(value: Any) -> uuid.UUID | None:
         return None
 
 
-def import_account(db: DbSession, user: User, payload: dict[str, Any]) -> dict[str, int]:
+def import_account(
+    db: DbSession, user: User, payload: dict[str, Any], *, storage: storage_services.Storage
+) -> dict[str, int]:
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, dict):
         raise InvalidError("That file does not look like a Neoma export.")
@@ -194,6 +196,14 @@ def import_account(db: DbSession, user: User, payload: dict[str, Any]) -> dict[s
     counts = {"subjects": 0, "groups": 0, "tasks": 0, "notes": 0, "events": 0}
 
     # Wipe the user's own data; memberships in other people's groups survive.
+    # Blobs first: a group delete cascades its files rows, and a personal file
+    # would be orphaned in R2 forever.
+    for group in db.scalars(select(Group).where(Group.owner_id == user.id)):
+        file_services.purge_group_files(db, storage, group.id)
+    for file in db.scalars(
+        select(FileObject).where(FileObject.owner_id == user.id, FileObject.group_id.is_(None))
+    ):
+        file_services.purge_file(db, storage, file)
     for note in db.scalars(select(Note).where(Note.owner_id == user.id)):
         db.delete(note)
     for task in db.scalars(select(Task).where(Task.owner_id == user.id)):
@@ -566,6 +576,6 @@ def seed_demo(db: DbSession, user: User) -> dict[str, int]:
     }
 
 
-def clear_demo(db: DbSession, user: User) -> dict[str, int]:
+def clear_demo(db: DbSession, user: User, *, storage: storage_services.Storage) -> dict[str, int]:
     """Removes everything the user owns. Same as import with an empty payload."""
-    return import_account(db, user, {"data": {}})
+    return import_account(db, user, {"data": {}}, storage=storage)

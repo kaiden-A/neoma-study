@@ -761,13 +761,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           if (thumb && presign.thumbUploadUrl) {
             await putToR2(presign.thumbUploadUrl, thumb, "image/jpeg");
           }
+          return await apiPost<FileOut>(`/api/files/${presign.id}/confirm`, {});
         } catch (error) {
           // Clean up the reserved row; otherwise a file with no object behind
-          // it could be attached to a note.
+          // it lingers in R2 and the database forever.
           void apiDelete(`/api/files/${presign.id}`).catch(() => {});
           throw error;
         }
-        return apiPost<FileOut>(`/api/files/${presign.id}/confirm`, {});
       },
       fileUrl: async (id, thumb = false) => {
         const result = await apiGet<{ url: string }>(`/api/files/${id}/url${thumb ? "?thumb=true" : ""}`);

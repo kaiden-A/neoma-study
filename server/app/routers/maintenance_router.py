@@ -3,8 +3,10 @@ from sqlalchemy.orm import Session as DbSession
 
 from ..config import get_settings
 from ..database import get_db
+from ..dependencies import get_storage
 from ..models import User
 from ..services import google_services, reminder_services, settings_services
+from ..services.storage_services import Storage
 
 router = APIRouter(prefix="/api", tags=["maintenance"])
 
@@ -41,10 +43,14 @@ def cleanup(
     dry_run: bool = Query(default=False),
     x_cleanup_secret: str | None = Header(default=None),
     db: DbSession = Depends(get_db),
+    storage: Storage = Depends(get_storage),
 ) -> dict[str, int]:
-    """Deletes dead sessions and expired guest rows. Secret header only."""
+    """Deletes dead sessions, expired guests and orphaned file blobs."""
     _require_secret(x_cleanup_secret)
-    return reminder_services.purge_expired(db, dry_run=dry_run)
+    return {
+        **reminder_services.purge_expired(db, dry_run=dry_run),
+        **reminder_services.purge_orphan_files(db, storage, dry_run=dry_run),
+    }
 
 
 @router.get("/email/unsubscribe")

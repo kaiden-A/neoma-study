@@ -25,9 +25,12 @@ def export_account(user: User = Depends(require_user), db: DbSession = Depends(g
 
 @router.post("/import")
 def import_account(
-    data: ImportRequest, user: User = Depends(require_user), db: DbSession = Depends(get_db)
+    data: ImportRequest,
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+    storage: Storage = Depends(get_storage),
 ) -> dict[str, int]:
-    return export_services.import_account(db, user, data.payload)
+    return export_services.import_account(db, user, data.payload, storage=storage)
 
 
 @router.post("/demo")
@@ -36,9 +39,13 @@ def load_demo(user: User = Depends(require_user), db: DbSession = Depends(get_db
 
 
 @router.delete("/demo")
-def clear_all(user: User = Depends(require_user), db: DbSession = Depends(get_db)) -> dict[str, int]:
+def clear_all(
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+) -> dict[str, int]:
     """Danger zone: removes everything the user owns, not just the demo."""
-    return export_services.clear_demo(db, user)
+    return export_services.clear_demo(db, user, storage=storage)
 
 
 @router.post("/maintenance/remove-files")

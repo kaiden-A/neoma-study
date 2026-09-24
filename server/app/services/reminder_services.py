@@ -12,11 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from ..config import get_settings
-from ..models import EmailLog, User
+from ..models import EmailLog, FileObject, Note, User
 from ..models import Session as SessionRow
-from ..services import email_services, notification_services
+from ..services import email_services, file_services, notification_services, storage_services
 
 DIGEST_GROUPS = ("overdue", "due", "sessions", "assigned", "exams", "notes")
+ORPHAN_FILE_HOURS = 24
 
 
 def unsubscribe_token(user: User) -> str:
@@ -124,6 +125,36 @@ def purge_expired(db: DbSession, *, dry_run: bool = False, now: datetime | None 
     return {"sessions": len(dead), "guests": len(guests)}
 
 
+def purge_orphan_files(
+    db: DbSession,
+    storage: storage_services.Storage,
+    *,
+    dry_run: bool = False,
+    older_than_hours: int = ORPHAN_FILE_HOURS,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Blobs whose reserved row never became a note (abandoned direct uploads).
+
+    A row is created before the browser PUTs to R2; if the upload or the
+    confirm call never lands, nothing references the row. The grace window
+    keeps a file safe while it is still being attached.
+    """
+    moment = now or datetime.now(UTC)
+    cutoff = moment - timedelta(hours=older_than_hours)
+    orphans = list(
+        db.scalars(
+            select(FileObject)
+            .where(FileObject.created_at <= cutoff)
+            .where(~FileObject.id.in_(select(Note.file_id).where(Note.file_id.is_not(None))))
+        )
+    )
+    if not dry_run:
+        for file in orphans:
+            file_services.purge_file(db, storage, file)
+        db.commit()
+    return {"files": len(orphans)}
+
+
 def check_secret(provided: str | None) -> bool:
     settings = get_settings()
     if not settings.cleanup_secret:
@@ -134,6 +165,7 @@ def check_secret(provided: str | None) -> bool:
 __all__ = [
     "check_secret",
     "purge_expired",
+    "purge_orphan_files",
     "send_reminders",
     "unsubscribe_token",
     "unsubscribe_url",

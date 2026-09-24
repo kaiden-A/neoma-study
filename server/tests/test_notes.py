@@ -1,9 +1,13 @@
 import io
+import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
+from app.models import FileObject
+from app.services import reminder_services
 
 settings = get_settings()
 
@@ -210,6 +214,30 @@ def test_presign_group_scope_needs_membership(
     )
 
     assert response.status_code == 404
+
+
+def test_orphan_upload_sweep(client: TestClient, sign_in, make_user, db: DbSession, storage) -> None:
+    sign_in(make_user(db))
+    ghost = client.post("/api/files/presign", json={"name": "ghost.pdf", "size": 4}).json()
+    storage.objects[storage.uploads[-1]] = b"%PDF"
+    kept = client.post("/api/files/presign", json={"name": "kept.pdf", "size": 4}).json()
+    storage.objects[storage.uploads[-1]] = b"%PDF"
+    client.post(f"/api/files/{kept['id']}/confirm")
+    client.post("/api/notes", json={"title": "Kept", "fileId": kept["id"]})
+
+    # Inside the grace window nothing goes, even though the ghost is unreferenced.
+    assert reminder_services.purge_orphan_files(db, storage) == {"files": 0}
+
+    row = db.get(FileObject, uuid.UUID(ghost["id"]))
+    assert row is not None
+    row.created_at = datetime.now(UTC) - timedelta(hours=48)
+    db.commit()
+
+    assert reminder_services.purge_orphan_files(db, storage) == {"files": 1}
+    assert client.get(f"/api/files/{ghost['id']}/url").status_code == 404
+    # The referenced upload is untouched.
+    assert client.get(f"/api/files/{kept['id']}/url").status_code == 200
+    assert storage.objects.get(storage.uploads[0]) is None
 
 
 def test_deleting_a_note_removes_its_objects(

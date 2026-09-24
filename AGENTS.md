@@ -104,6 +104,11 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   readable by members, attachments are copied on share (`Storage.copy`) so each
   copy is independent, and deleting a note/group purges its blobs. Access rules
   live in `services/file_services.py`. Sharing copies text into a group note.
+  `import_account`/`clear_demo` purge blobs before their rows; `purge_orphan_files`
+  (via `POST /api/maintenance/cleanup`) sweeps reserved rows that never became a
+  note; `scripts/reconcile_files.py` reconciles R2 against the `files` table.
+  `Storage.delete` is best-effort but logs failures - a rejected delete would
+  otherwise leave the blob in R2 with no recovery path.
 - Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.
   Google Calendar sync lives in `services/google_services.py` (`google_accounts`,
   `events.google_event_id`, `tasks.google_event_id`/`google_account_id`): OAuth

@@ -3,7 +3,7 @@ import io
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import Event, Group, Note, Subject, Task
+from app.models import Event, FileObject, Group, Note, Subject, Task
 
 
 def test_demo_semester_loads_and_clears(client: TestClient, sign_in, make_user, db: DbSession) -> None:
@@ -138,3 +138,29 @@ def test_remove_files_clears_objects(client: TestClient, sign_in, make_user, db:
 
     assert result["files"] == 1
     assert client.get(f"/api/notes/{note['id']}").json()["fileId"] is None
+
+
+def test_clear_demo_purges_blobs(client: TestClient, sign_in, make_user, db: DbSession, storage) -> None:
+    sign_in(make_user(db))
+    personal = client.post(
+        "/api/files", files={"file": ("scan.jpg", io.BytesIO(b"img"), "image/jpeg")}
+    ).json()
+    client.post("/api/notes", json={"type": "handwritten", "title": "Scan", "fileId": personal["id"]})
+
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    shared = client.post(
+        "/api/files",
+        files={"file": ("deck.pdf", io.BytesIO(b"%PDF"), "application/pdf")},
+        data={"groupId": group["id"]},
+    ).json()
+    client.post(f"/api/groups/{group['id']}/notes", json={"title": "Deck", "fileId": shared["id"]})
+
+    client.delete("/api/demo")
+
+    # Both blobs left R2 with their rows, including the group cascade.
+    assert storage.objects == {}
+    assert db.query(FileObject).count() == 0
+    assert storage.deleted

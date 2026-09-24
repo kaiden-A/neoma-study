@@ -5,7 +5,7 @@ upload (no bucket CORS needed); previews use short-lived presigned GETs so a
 URL never outlives one page render.
 """
 
-import contextlib
+import logging
 from typing import Any
 
 import boto3
@@ -14,6 +14,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from ..config import Settings, get_settings
 from .errors import UnavailableError
+
+log = logging.getLogger(__name__)
 
 UPLOAD_ERROR = "Could not store that file. Try again."
 
@@ -60,9 +62,12 @@ class Storage:
     def delete(self, key: str | None) -> None:
         if not key or not self.configured:
             return
-        # Deleting a blob that is already gone is not worth failing a request.
-        with contextlib.suppress(BotoCoreError, ClientError):
+        # Best-effort: a missing blob is fine, but a rejected delete must not
+        # vanish - the DB row goes regardless, so log it or the key leaks.
+        try:
             self.client().delete_object(Bucket=self.bucket, Key=key)
+        except (BotoCoreError, ClientError) as exc:
+            log.warning("R2 delete failed for %s: %s", key, exc)
 
     def copy(self, source_key: str, dest_key: str) -> None:
         """Server-side copy, so sharing a note never re-uploads its bytes."""
