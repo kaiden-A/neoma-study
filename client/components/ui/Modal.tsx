@@ -25,11 +25,17 @@ export function Modal({
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     document.body.classList.add("has-overlay");
-    const focusable = modalRef.current?.querySelector<HTMLElement>(
-      "input, textarea, select, button:not([disabled]), [href]",
-    );
-    focusable?.focus();
+    const target =
+      modalRef.current?.querySelector<HTMLElement>("input, textarea, select") ??
+      modalRef.current?.querySelector<HTMLElement>("button:not([disabled]), [href]");
+    target?.focus();
+    return () => {
+      document.body.classList.remove("has-overlay");
+      previous?.focus?.();
+    };
+  }, []);
 
+  useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape" && dismissible) {
         event.stopPropagation();
@@ -37,11 +43,7 @@ export function Modal({
       }
     }
     document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("keydown", onKey, true);
-      document.body.classList.remove("has-overlay");
-      previous?.focus?.();
-    };
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [dismissible, onClose]);
 
   return (
