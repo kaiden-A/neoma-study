@@ -50,6 +50,9 @@ npx @modelcontextprotocol/inspector   # transport: Streamable HTTP, URL: http://
 | `create_note` | Personal note, or post into a group | |
 | `update_note` | Title, body, pinned | |
 | `list_events` | Calendar events in a range | |
+| `create_event` | New calendar event, optionally on a group | pushes to Google Calendar when connected |
+| `update_event` | Title, time, type, location, reminder, notes | |
+| `delete_event` | Deletes an event | destructive |
 | `daily_brief` | Overdue, due today, this week, events | |
 
 Tools return `structuredContent` from the same Pydantic schemas the web API

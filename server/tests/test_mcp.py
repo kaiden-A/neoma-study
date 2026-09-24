@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
-from app.models import Task, User
+from app.models import Event, Task, User
 
 settings = get_settings()
 
@@ -108,6 +108,9 @@ def test_initialize_and_tools_list(client: TestClient, mcp_env: User, mcp_key: s
         "get_note",
         "create_note",
         "list_events",
+        "create_event",
+        "update_event",
+        "delete_event",
         "daily_brief",
         "now",
     } <= names
@@ -146,6 +149,111 @@ def test_tool_errors_are_readable(client: TestClient, mcp_env: User, mcp_key: st
     assert result.get("isError") is True
     text = result["content"][0]["text"]
     assert "item is gone" in text.lower()
+
+
+def _tomorrow_ms() -> int:
+    return int((datetime.now(UTC) + timedelta(days=1)).timestamp() * 1000)
+
+
+def test_create_event_round_trip(client: TestClient, mcp_env: User, mcp_key: str, db: DbSession) -> None:
+    starts = _tomorrow_ms()
+    created = _call(
+        client,
+        "create_event",
+        {
+            "title": "CS101 lecture",
+            "starts_at": starts,
+            "ends_at": starts + 3_600_000,
+            "location": "LT1",
+        },
+        mcp_key,
+    )
+    payload = _payload(created)
+    assert payload["title"] == "CS101 lecture"
+    assert payload["startsAt"] == starts
+    assert payload["location"] == "LT1"
+
+    listed = _payload(_call(client, "list_events", {}, mcp_key))
+    assert [event["title"] for event in listed] == ["CS101 lecture"]
+    assert listed[0]["startsAtIso"].endswith("Z")
+
+    upcoming = _payload(_call(client, "upcoming", {}, mcp_key))
+    assert upcoming[0]["kind"] == "event"
+
+    # The event is stored for the owner the static key maps to.
+    stored = db.scalar(select(Event).where(Event.title == "CS101 lecture"))
+    assert stored is not None
+    assert stored.owner_id == mcp_env.id
+    assert stored.group_id is None
+
+
+def test_events_scope_to_the_owner(
+    client: TestClient, mcp_env: User, mcp_key: str, make_user, db: DbSession
+) -> None:
+    other = make_user(db, name="Maya", email="maya@example.com")
+    db.add(
+        Event(
+            owner_id=other.id,
+            title="Maya's lecture",
+            starts_at=datetime.fromtimestamp(_tomorrow_ms() / 1000, tz=UTC),
+        )
+    )
+    db.commit()
+
+    assert _payload(_call(client, "list_events", {}, mcp_key)) == []
+
+
+def test_update_event_moves_it_and_clears_the_end(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    starts = _tomorrow_ms()
+    created = _payload(
+        _call(
+            client,
+            "create_event",
+            {"title": "Tutorial", "starts_at": starts, "ends_at": starts + 3_600_000},
+            mcp_key,
+        )
+    )
+
+    moved = starts + 86_400_000
+    updated = _payload(
+        _call(
+            client,
+            "update_event",
+            {"event_id": created["id"], "starts_at": moved, "ends_at": 0, "type": "session"},
+            mcp_key,
+        )
+    )
+
+    assert updated["startsAt"] == moved
+    assert updated["endsAt"] is None
+    assert updated["type"] == "session"
+
+
+def test_delete_event(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    created = _payload(
+        _call(client, "create_event", {"title": "Gone soon", "starts_at": _tomorrow_ms()}, mcp_key)
+    )
+
+    deleted = _call(client, "delete_event", {"event_id": created["id"]}, mcp_key)
+
+    assert _payload(deleted) == {"ok": True}
+    assert _payload(_call(client, "list_events", {}, mcp_key)) == []
+
+
+def test_event_errors_are_readable(client: TestClient, mcp_env: User, mcp_key: str) -> None:
+    starts = _tomorrow_ms()
+    bad_type = _call(client, "create_event", {"title": "Yoga", "starts_at": starts, "type": "class"}, mcp_key)
+    assert bad_type.get("isError") is True
+    assert "event type" in bad_type["content"][0]["text"].lower()
+
+    bad_range = _call(
+        client,
+        "create_event",
+        {"title": "Backwards", "starts_at": starts, "ends_at": starts - 1000},
+        mcp_key,
+    )
+    assert bad_range.get("isError") is True
+    assert "end cannot be before the start" in bad_range["content"][0]["text"].lower()
 
 
 def test_static_key_needs_a_matching_member(

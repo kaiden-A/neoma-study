@@ -15,7 +15,8 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .mcp_server import current_user, default_zone, get_session, mcp
-from .models import TaskStatus
+from .models import EventType, TaskStatus
+from .schemas.events import EventCreate, EventOut, EventPatch
 from .schemas.groups import GroupOut
 from .schemas.notes import GroupNoteCreate, NoteCreate, NoteOut, NotePatch
 from .schemas.tasks import TaskCreate, TaskOut, TaskPatch
@@ -29,6 +30,7 @@ DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_
 GroupId = Annotated[str, Field(description="The group's id.")]
 TaskId = Annotated[str, Field(description="The task's id.")]
 NoteId = Annotated[str, Field(description="The note's id.")]
+EventId = Annotated[str, Field(description="The event's id.")]
 Title = Annotated[str, Field(min_length=1, max_length=300, description="A short title.")]
 
 
@@ -54,6 +56,13 @@ def _zone(name: str | None) -> ZoneInfo:
         return ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ToolError(f"Unknown timezone {name!r}. Use an IANA name, e.g. Asia/Kuala_Lumpur.") from exc
+
+
+def _event_type(value: str) -> EventType:
+    try:
+        return EventType(value)
+    except ValueError as exc:
+        raise ToolError("Event type must be exam, session, meeting or personal.") from exc
 
 
 def _iso(ms: int | None) -> str | None:
@@ -196,6 +205,90 @@ def delete_task(task_id: TaskId) -> dict:
     with get_session() as db:
         user = current_user(db)
         _run(lambda: task_services.delete_task(db, user, _uuid(task_id, "task")))
+        return {"ok": True}
+
+
+@mcp.tool(annotations=MUTATING)
+def create_event(
+    title: Title,
+    starts_at: Annotated[int, Field(description="Start time in ms since epoch.")],
+    ends_at: Annotated[int | None, Field(description="End time in ms since epoch.")] = None,
+    type: Annotated[str, Field(description="exam, session, meeting or personal.")] = "personal",
+    group_id: Annotated[
+        str | None, Field(description="Put it on this group's calendar; leave out for the member's own.")
+    ] = None,
+    location: Annotated[str, Field(max_length=300, description="Where it happens.")] = "",
+    reminder_minutes: Annotated[
+        int, Field(ge=0, le=10080, description="Minutes before the start to remind.")
+    ] = 60,
+    notes: Annotated[str, Field(max_length=5000, description="Extra detail.")] = "",
+) -> EventOut:
+    """Add a calendar event, optionally on one of the member's groups."""
+    with get_session() as db:
+        user = current_user(db)
+        return _run(
+            lambda: event_services.create_event(
+                db,
+                user,
+                EventCreate(
+                    title=title,
+                    type=_event_type(type),
+                    groupId=group_id,
+                    startsAt=starts_at,
+                    endsAt=ends_at,
+                    location=location,
+                    reminderMinutes=reminder_minutes,
+                    notes=notes,
+                ),
+            )
+        )
+
+
+@mcp.tool(annotations=MUTATING)
+def update_event(
+    event_id: EventId,
+    title: Annotated[str | None, Field(description="A new title.")] = None,
+    type: Annotated[str | None, Field(description="exam, session, meeting or personal.")] = None,
+    starts_at: Annotated[int | None, Field(description="New start time in ms since epoch.")] = None,
+    ends_at: Annotated[int | None, Field(description="New end time in ms; 0 clears it.")] = None,
+    group_id: Annotated[
+        str | None, Field(description="Move it to this group's calendar; empty moves it to personal.")
+    ] = None,
+    location: Annotated[str | None, Field(max_length=300, description="A new location.")] = None,
+    reminder_minutes: Annotated[
+        int | None, Field(ge=0, le=10080, description="New reminder lead in minutes.")
+    ] = None,
+    notes: Annotated[str | None, Field(max_length=5000, description="Replacement detail.")] = None,
+) -> EventOut:
+    """Change an event's title, time, type, location, reminder or notes."""
+    with get_session() as db:
+        user = current_user(db)
+        patch = EventPatch()
+        if title is not None:
+            patch.title = title
+        if type is not None:
+            patch.type = _event_type(type)
+        if starts_at is not None:
+            patch.startsAt = starts_at
+        if ends_at is not None:
+            patch.endsAt = None if ends_at == 0 else ends_at
+        if group_id is not None:
+            patch.groupId = group_id
+        if location is not None:
+            patch.location = location
+        if reminder_minutes is not None:
+            patch.reminderMinutes = reminder_minutes
+        if notes is not None:
+            patch.notes = notes
+        return _run(lambda: event_services.update_event(db, user, _uuid(event_id, "event"), patch))
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+def delete_event(event_id: EventId) -> dict:
+    """Delete a calendar event. This cannot be undone."""
+    with get_session() as db:
+        user = current_user(db)
+        _run(lambda: event_services.delete_event(db, user, _uuid(event_id, "event")))
         return {"ok": True}
 
 
