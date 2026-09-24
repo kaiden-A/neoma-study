@@ -234,6 +234,15 @@ export interface FileOut {
   size: number;
 }
 
+export interface FilePresign {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  uploadUrl: string;
+  thumbUploadUrl: string | null;
+}
+
 export interface NoteCreateInput {
   type?: NoteType;
   title?: string;

@@ -41,13 +41,17 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const flush = useCallback(
     async (patch?: Partial<{ title: string; body: string; tags: string[] }>) => {
       if (!note) return;
-      await store.updateNote(note.id, {
-        title: (patch?.title ?? title).trim() || "Untitled",
-        body: patch?.body ?? body,
-        tags: patch?.tags ?? parseTags(tags),
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1200);
+      try {
+        await store.updateNote(note.id, {
+          title: (patch?.title ?? title).trim() || "Untitled",
+          body: patch?.body ?? body,
+          tags: patch?.tags ?? parseTags(tags),
+        });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1200);
+      } catch {
+        // The store rolls the note back and says what went wrong.
+      }
     },
     [body, note, store, tags, title],
   );
@@ -118,9 +122,13 @@ export function NoteEditor({ noteId }: { noteId: string }) {
       variant: "danger",
     });
     if (!ok) return;
-    await store.deleteNote(note.id);
-    toast("Deleted", { kind: "info" });
-    router.push(group ? `/groups/${group.id}?tab=notes` : "/vault");
+    try {
+      await store.deleteNote(note.id);
+      toast("Deleted", { kind: "info" });
+      router.push(group ? `/groups/${group.id}?tab=notes` : "/vault");
+    } catch {
+      // The store puts the note back and says what went wrong.
+    }
   }
 
   return (
@@ -262,7 +270,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
                   className="nm-select"
                   value={note.subjectId ?? ""}
                   onChange={(event) => {
-                    void store.updateNote(note.id, { subjectId: event.target.value || null });
+                    void store.updateNote(note.id, { subjectId: event.target.value || null }).catch(() => {});
                   }}
                 >
                   <option value="">No subject</option>
@@ -348,7 +356,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             {
               label: note.pinned ? "Unpin" : "Pin to top",
               icon: "fa-thumbtack",
-              onSelect: () => void store.updateNote(note.id, { pinned: !note.pinned }),
+              onSelect: () => void store.updateNote(note.id, { pinned: !note.pinned }).catch(() => {}),
             },
             { label: "Share to group", icon: "fa-share-nodes", onSelect: () => setShareOpen(true) },
             { separator: true },

@@ -96,7 +96,10 @@ export function NoteCard({
               label: note.pinned ? "Unpin" : "Pin to top",
               icon: "fa-thumbtack",
               onSelect: () => {
-                void store.updateNote(note.id, { pinned: !note.pinned }).then(() => onChanged?.());
+                void store
+                  .updateNote(note.id, { pinned: !note.pinned })
+                  .then(() => onChanged?.())
+                  .catch(() => {});
               },
             },
             { label: "Share to group", icon: "fa-share-nodes", onSelect: () => setShareOpen(true) },
@@ -106,7 +109,10 @@ export function NoteCard({
               icon: "fa-trash",
               danger: true,
               onSelect: () => {
-                void store.deleteNote(note.id).then(() => onChanged?.());
+                void store
+                  .deleteNote(note.id)
+                  .then(() => onChanged?.())
+                  .catch(() => {});
               },
             },
           ]}

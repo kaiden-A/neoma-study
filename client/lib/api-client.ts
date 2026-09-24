@@ -68,9 +68,3 @@ export function apiPut<T>(path: string, body?: unknown): Promise<T> {
 export function apiDelete<T = { ok: boolean }>(path: string): Promise<T> {
   return apiJson<T>(path, { method: "DELETE" });
 }
-
-export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
-  const res = await apiFetch(path, { method: "POST", body: form });
-  if (!res.ok) throw await readError(res);
-  return (await res.json()) as T;
-}

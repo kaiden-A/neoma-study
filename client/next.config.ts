@@ -11,11 +11,11 @@ const nextConfig: NextConfig = {
   experimental: {
     // Next clones request bodies for the proxy (and therefore for every
     // rewritten route) and buffers at most 10MB by default; anything larger
-    // reaches FastAPI truncated. Uploads travel through /api/files, so keep
-    // this above MAX_UPLOAD_BYTES (15MB) with room for the thumbnail part and
-    // multipart overhead - the client sends file + thumb in one request.
-    // Order to preserve: client MAX_FILE_BYTES (15MB) <= server
-    // MAX_UPLOAD_BYTES (15MB) < this buffer.
+    // reaches FastAPI truncated. Uploads now go browser -> R2 directly with a
+    // presigned PUT, so this only covers the legacy multipart POST /api/files:
+    // keep it above MAX_UPLOAD_BYTES (15MB) with room for the thumbnail part
+    // and multipart overhead. Order to preserve: client MAX_FILE_BYTES (15MB)
+    // <= server MAX_UPLOAD_BYTES (15MB) < this buffer.
     proxyClientMaxBodySize: "20mb",
   },
   async rewrites() {

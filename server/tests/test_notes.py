@@ -118,6 +118,100 @@ def test_upload_rejects_oversize_and_empty(
     assert empty.status_code == 422
 
 
+def test_presign_confirm_uploads_through_r2(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    user = make_user(db)
+    sign_in(user)
+
+    presign = client.post(
+        "/api/files/presign",
+        json={"name": "paper.pdf", "contentType": "application/pdf", "size": 12, "thumb": True},
+    )
+
+    assert presign.status_code == 201, presign.text
+    body = presign.json()
+    assert body["size"] == 12
+    main_key, thumb_key = storage.uploads
+    assert main_key.startswith(f"users/{user.id}/")
+    assert thumb_key == f"{main_key}-thumb"
+    assert body["uploadUrl"] == f"https://r2.test/{main_key}?put=1"
+    assert body["thumbUploadUrl"] == f"https://r2.test/{thumb_key}?put=1"
+
+    # The browser PUTs straight to R2; confirm records the real size.
+    storage.objects[main_key] = b"%PDF-1.4 x"
+    confirmed = client.post(f"/api/files/{body['id']}/confirm")
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["size"] == len(b"%PDF-1.4 x")
+    # The thumb never landed, so previews fall back to the main object.
+    thumb_url = client.get(f"/api/files/{body['id']}/url?thumb=true").json()["url"]
+    assert thumb_url.endswith(f"{main_key}?signed=1")
+
+
+def test_confirm_rejects_a_missing_upload(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    sign_in(make_user(db))
+    body = client.post("/api/files/presign", json={"name": "ghost.pdf", "size": 10}).json()
+
+    response = client.post(f"/api/files/{body['id']}/confirm")
+
+    assert response.status_code == 422
+    assert "did not finish" in response.json()["error"]
+    assert client.get(f"/api/files/{body['id']}/url").status_code == 404
+
+
+def test_presign_rejects_oversize_and_empty(
+    client: TestClient, sign_in, make_user, db: DbSession, storage, monkeypatch
+) -> None:
+    sign_in(make_user(db))
+    monkeypatch.setattr(settings, "max_upload_bytes", 4)
+
+    too_big = client.post(
+        "/api/files/presign",
+        json={"name": "big.pdf", "contentType": "application/pdf", "size": 5},
+    )
+    assert too_big.status_code == 422
+    assert "15 MB" in too_big.json()["error"]
+
+    empty = client.post("/api/files/presign", json={"name": "empty.pdf", "size": 0})
+    assert empty.status_code == 422
+
+
+def test_confirm_is_uploader_only(client: TestClient, sign_in, make_user, db: DbSession, storage) -> None:
+    owner = make_user(db, email="ada@example.com")
+    other = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    body = client.post("/api/files/presign", json={"name": "mine.pdf", "size": 10}).json()
+    storage.objects[storage.uploads[-1]] = b"%PDF"
+    client.post("/api/auth/logout")
+
+    sign_in(other)
+    assert client.post(f"/api/files/{body['id']}/confirm").status_code == 404
+
+
+def test_presign_group_scope_needs_membership(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    outsider = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    client.post("/api/auth/logout")
+
+    sign_in(outsider)
+    response = client.post(
+        "/api/files/presign",
+        json={"name": "x.pdf", "size": 4, "groupId": group["id"]},
+    )
+
+    assert response.status_code == 404
+
+
 def test_deleting_a_note_removes_its_objects(
     client: TestClient, sign_in, make_user, db: DbSession, storage
 ) -> None:
@@ -176,9 +270,7 @@ def test_share_to_group_copies_text_and_file(
     assert personal["scope"] == "personal"
     assert personal["fileId"] == upload["id"]
     # The share copied the object instead of pointing at the personal file.
-    assert storage.copies == [
-        (f"users/{owner.id}/{upload['id']}", f"groups/{group['id']}/{body['fileId']}")
-    ]
+    assert storage.copies == [(f"users/{owner.id}/{upload['id']}", f"groups/{group['id']}/{body['fileId']}")]
 
     # Deleting the personal note leaves the shared copy alone.
     assert client.delete(f"/api/notes/{note['id']}").status_code == 204
@@ -240,9 +332,7 @@ def test_group_files_are_member_scoped(
     assert not_member_upload.status_code == 404
 
 
-def test_group_note_carries_a_file(
-    client: TestClient, sign_in, make_user, db: DbSession, storage
-) -> None:
+def test_group_note_carries_a_file(client: TestClient, sign_in, make_user, db: DbSession, storage) -> None:
     owner = make_user(db, email="ada@example.com")
     member = make_user(db, email="maya@example.com")
     sign_in(owner)

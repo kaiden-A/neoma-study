@@ -89,6 +89,34 @@ class Storage:
         except (BotoCoreError, ClientError) as exc:
             raise StorageError("Could not prepare that file.") from exc
 
+    def presigned_put(self, key: str, content_type: str) -> str:
+        """A short-lived URL the browser PUTs bytes to; the API never sees them."""
+        if not self.configured:
+            raise UnavailableError("File storage is not configured.")
+        try:
+            return self.client().generate_presigned_url(
+                "put_object",
+                Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type},
+                ExpiresIn=self._settings.r2_signed_url_ttl_seconds,
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise StorageError("Could not prepare that upload.") from exc
+
+    def head(self, key: str) -> int | None:
+        """The stored object's size, or None when it was never uploaded."""
+        if not self.configured:
+            raise UnavailableError("File storage is not configured.")
+        try:
+            response = self.client().head_object(Bucket=self.bucket, Key=key)
+        except ClientError as exc:
+            code = str((exc.response.get("Error") or {}).get("Code") or "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise StorageError(UPLOAD_ERROR) from exc
+        except BotoCoreError as exc:
+            raise StorageError(UPLOAD_ERROR) from exc
+        return int(response.get("ContentLength") or 0)
+
 
 _storage: Storage | None = None
 

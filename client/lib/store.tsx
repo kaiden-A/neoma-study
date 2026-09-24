@@ -2,8 +2,10 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiDelete, apiPatch, apiPost, apiUpload, apiGet } from "@/lib/api-client";
+import { useOverlays } from "@/components/ui/Overlays";
+import { apiDelete, apiPatch, apiPost, apiGet } from "@/lib/api-client";
 import { addDays, startOfDay } from "@/lib/dates";
+import { putToR2 } from "@/lib/files";
 import { eventType } from "@/lib/markers";
 import { applyTheme } from "@/lib/theme";
 import type {
@@ -14,6 +16,7 @@ import type {
   EventCreateInput,
   EventPatchInput,
   FileOut,
+  FilePresign,
   Group,
   GroupKind,
   GroupNoteInput,
@@ -83,6 +86,7 @@ export interface TaskCreateInput {
   dueAt?: number | null;
   status?: TaskStatus;
   priority?: TaskPriority;
+  reminderMinutes?: number;
   assigneeIds?: string[];
   subtasks?: SubtaskInput[];
   links?: TaskLinkInput[];
@@ -160,6 +164,76 @@ interface StoreValue {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
+type LocalRow = Task | Note | CalendarEvent;
+
+// Optimistic merges: a patch lands in local state before the server answers,
+// so a tick or a column move is instant. The server response replaces it.
+function mergeTaskPatch(task: Task, patch: TaskPatchInput): Task {
+  const next: Task = { ...task, updatedAt: Date.now() };
+  if (patch.title !== undefined) next.title = patch.title;
+  if (patch.description !== undefined) next.description = patch.description;
+  if (patch.dueAt !== undefined) next.dueAt = patch.dueAt;
+  if (patch.status !== undefined) {
+    next.status = patch.status;
+    next.completedAt = patch.status === "done" ? Date.now() : null;
+  }
+  if (patch.priority !== undefined) next.priority = patch.priority;
+  if (patch.reminderMinutes !== undefined) next.reminderMinutes = patch.reminderMinutes;
+  if (patch.groupId !== undefined) {
+    next.groupId = patch.groupId;
+    if (patch.groupId === null) next.assigneeIds = [];
+  }
+  if (patch.assigneeIds !== undefined) next.assigneeIds = patch.assigneeIds;
+  if (patch.subtasks !== undefined) {
+    next.subtasks = patch.subtasks.map((subtask, index) => ({
+      id: subtask.id ?? `pending-${index}`,
+      title: subtask.title,
+      done: subtask.done,
+    }));
+  }
+  if (patch.links !== undefined) {
+    next.links = patch.links.map((link, index) => ({
+      id: link.id ?? `pending-${index}`,
+      label: link.label,
+      url: link.url,
+    }));
+  }
+  return next;
+}
+
+function mergeNotePatch(note: Note, patch: NotePatchInput): Note {
+  const next: Note = { ...note, updatedAt: Date.now() };
+  if (patch.title !== undefined) next.title = patch.title;
+  if (patch.body !== undefined) next.body = patch.body;
+  if (patch.url !== undefined) next.url = patch.url;
+  if (patch.subjectId !== undefined) next.subjectId = patch.subjectId;
+  if (patch.topicId !== undefined) next.topicId = patch.topicId;
+  if (patch.type !== undefined) next.type = patch.type;
+  if (patch.tags !== undefined) next.tags = patch.tags;
+  if (patch.pinned !== undefined) next.pinned = patch.pinned;
+  return next;
+}
+
+function mergeEventPatch(event: CalendarEvent, patch: EventPatchInput): CalendarEvent {
+  const next: CalendarEvent = { ...event, updatedAt: Date.now() };
+  if (patch.title !== undefined) next.title = patch.title;
+  if (patch.type !== undefined) next.type = patch.type;
+  if (patch.groupId !== undefined) next.groupId = patch.groupId;
+  if (patch.startsAt !== undefined) next.startsAt = patch.startsAt;
+  if (patch.endsAt !== undefined) next.endsAt = patch.endsAt;
+  if (patch.location !== undefined) next.location = patch.location;
+  if (patch.reminderMinutes !== undefined) next.reminderMinutes = patch.reminderMinutes;
+  if (patch.notes !== undefined) next.notes = patch.notes;
+  return next;
+}
+
+/** The server's postpone rule, mirrored so the change shows before it lands. */
+function postponedDue(dueAt: number | null): number {
+  if (dueAt !== null) return dueAt + 86_400_000;
+  const local = new Date();
+  return new Date(local.getFullYear(), local.getMonth(), local.getDate() + 1, 9, 0, 0, 0).getTime();
+}
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const autoSyncDone = useRef(false);
   const [ready, setReady] = useState(false);
@@ -171,6 +245,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  const { toast } = useOverlays();
+  // Optimistic bookkeeping: `stable` is the last server-confirmed row (the
+  // rollback target) and `pending` counts in-flight mutations per row, so a
+  // slow response cannot clobber a newer optimistic change.
+  const stableRows = useRef(new Map<string, LocalRow>());
+  const pendingRows = useRef(new Map<string, number>());
+
+  const beginMutation = useCallback((id: string, current: LocalRow | undefined) => {
+    const inflight = pendingRows.current.get(id) ?? 0;
+    if (inflight === 0 && current) stableRows.current.set(id, current);
+    pendingRows.current.set(id, inflight + 1);
+  }, []);
+
+  const finishMutation = useCallback((id: string): { last: boolean; rollback: LocalRow | null } => {
+    const left = Math.max(0, (pendingRows.current.get(id) ?? 1) - 1);
+    if (left > 0) {
+      pendingRows.current.set(id, left);
+      return { last: false, rollback: null };
+    }
+    pendingRows.current.delete(id);
+    return { last: true, rollback: stableRows.current.get(id) ?? null };
+  }, []);
+
+  const notifyFailure = useCallback(() => {
+    toast("Couldn’t save that change", {
+      kind: "danger",
+      body: "Check your connection — it’s back the way it was.",
+    });
+  }, [toast]);
 
   const applyBootstrap = useCallback((data: Bootstrap) => {
     setUser(data.user);
@@ -495,19 +599,58 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return task;
       },
       updateTask: async (id, patch) => {
-        const task = await apiPatch<Task>(`/api/tasks/${id}`, patch);
-        replaceTask(task);
-        return task;
+        const current = tasks.find((task) => task.id === id);
+        beginMutation(id, current);
+        setTasks((rows) => rows.map((task) => (task.id === id ? mergeTaskPatch(task, patch) : task)));
+        try {
+          const task = await apiPatch<Task>(`/api/tasks/${id}`, patch);
+          if (finishMutation(id).last) {
+            stableRows.current.set(id, task);
+            replaceTask(task);
+          }
+          return task;
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceTask(rollback as Task);
+          notifyFailure();
+          throw error;
+        }
       },
       deleteTask: async (id) => {
-        await apiDelete(`/api/tasks/${id}`);
+        beginMutation(id, tasks.find((task) => task.id === id));
         setTasks((current) => current.filter((task) => task.id !== id));
+        try {
+          await apiDelete(`/api/tasks/${id}`);
+          if (finishMutation(id).last) stableRows.current.delete(id);
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceTask(rollback as Task);
+          notifyFailure();
+          throw error;
+        }
       },
       postponeTask: async (id) => {
-        const offset = new Date().getTimezoneOffset();
-        const task = await apiPost<Task>(`/api/tasks/${id}/postpone`, { timezoneOffsetMinutes: offset });
-        replaceTask(task);
-        return task;
+        const current = tasks.find((task) => task.id === id);
+        beginMutation(id, current);
+        if (current) {
+          setTasks((rows) =>
+            rows.map((task) => (task.id === id ? { ...task, dueAt: postponedDue(task.dueAt) } : task)),
+          );
+        }
+        try {
+          const offset = new Date().getTimezoneOffset();
+          const task = await apiPost<Task>(`/api/tasks/${id}/postpone`, { timezoneOffsetMinutes: offset });
+          if (finishMutation(id).last) {
+            stableRows.current.set(id, task);
+            replaceTask(task);
+          }
+          return task;
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceTask(rollback as Task);
+          notifyFailure();
+          throw error;
+        }
       },
       duplicateTask: async (id) => {
         const task = await apiPost<Task>(`/api/tasks/${id}/duplicate`);
@@ -525,13 +668,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return note;
       },
       updateNote: async (id, patch) => {
-        const note = await apiPatch<Note>(`/api/notes/${id}`, patch);
-        replaceNote(note);
-        return note;
+        const current = notes.find((note) => note.id === id);
+        beginMutation(id, current);
+        setNotes((rows) => rows.map((note) => (note.id === id ? mergeNotePatch(note, patch) : note)));
+        try {
+          const note = await apiPatch<Note>(`/api/notes/${id}`, patch);
+          if (finishMutation(id).last) {
+            stableRows.current.set(id, note);
+            replaceNote(note);
+          }
+          return note;
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceNote(rollback as Note);
+          notifyFailure();
+          throw error;
+        }
       },
       deleteNote: async (id) => {
-        await apiDelete(`/api/notes/${id}`);
+        beginMutation(id, notes.find((note) => note.id === id));
         setNotes((current) => current.filter((note) => note.id !== id));
+        try {
+          await apiDelete(`/api/notes/${id}`);
+          if (finishMutation(id).last) stableRows.current.delete(id);
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceNote(rollback as Note);
+          notifyFailure();
+          throw error;
+        }
       },
       shareNote: async (id, groupId, topicId, includeFile = true) => {
         const note = await apiPost<Note>(`/api/notes/${id}/share`, {
@@ -583,11 +748,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         );
       },
       uploadFile: async (file, name, thumb = null, groupId = null) => {
-        const form = new FormData();
-        form.append("file", file, name);
-        if (thumb) form.append("thumb", thumb, `${name}.thumb.jpg`);
-        if (groupId) form.append("groupId", groupId);
-        return apiUpload<FileOut>("/api/files", form);
+        const contentType = file.type || "application/octet-stream";
+        const presign = await apiPost<FilePresign>("/api/files/presign", {
+          name,
+          contentType,
+          size: file.size,
+          groupId,
+          thumb: Boolean(thumb),
+        });
+        try {
+          await putToR2(presign.uploadUrl, file, contentType);
+          if (thumb && presign.thumbUploadUrl) {
+            await putToR2(presign.thumbUploadUrl, thumb, "image/jpeg");
+          }
+        } catch (error) {
+          // Clean up the reserved row; otherwise a file with no object behind
+          // it could be attached to a note.
+          void apiDelete(`/api/files/${presign.id}`).catch(() => {});
+          throw error;
+        }
+        return apiPost<FileOut>(`/api/files/${presign.id}/confirm`, {});
       },
       fileUrl: async (id, thumb = false) => {
         const result = await apiGet<{ url: string }>(`/api/files/${id}/url${thumb ? "?thumb=true" : ""}`);
@@ -599,29 +779,77 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return event;
       },
       updateEvent: async (id, patch) => {
-        const event = await apiPatch<CalendarEvent>(`/api/events/${id}`, patch);
-        replaceEvent(event);
-        return event;
+        const current = events.find((event) => event.id === id);
+        beginMutation(id, current);
+        setEvents((rows) => rows.map((event) => (event.id === id ? mergeEventPatch(event, patch) : event)));
+        try {
+          const event = await apiPatch<CalendarEvent>(`/api/events/${id}`, patch);
+          if (finishMutation(id).last) {
+            stableRows.current.set(id, event);
+            replaceEvent(event);
+          }
+          return event;
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceEvent(rollback as CalendarEvent);
+          notifyFailure();
+          throw error;
+        }
       },
       deleteEvent: async (id) => {
-        await apiDelete(`/api/events/${id}`);
+        beginMutation(id, events.find((event) => event.id === id));
         setEvents((current) => current.filter((event) => event.id !== id));
+        try {
+          await apiDelete(`/api/events/${id}`);
+          if (finishMutation(id).last) stableRows.current.delete(id);
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceEvent(rollback as CalendarEvent);
+          notifyFailure();
+          throw error;
+        }
       },
       eventGoogleUrl: async (id) => {
         const result = await apiGet<{ url: string }>(`/api/events/${id}/google`);
         return result.url;
       },
       markNotificationsRead: async (ids) => {
-        const items = await apiPost<NotificationItem[]>("/api/notifications/read", { ids });
-        setNotifications(items);
+        const before = notifications;
+        setNotifications((current) =>
+          current.map((item) => (ids.includes(item.id) ? { ...item, read: true } : item)),
+        );
+        try {
+          setNotifications(await apiPost<NotificationItem[]>("/api/notifications/read", { ids }));
+        } catch (error) {
+          setNotifications(before);
+          notifyFailure();
+          throw error;
+        }
       },
       markAllNotificationsRead: async () => {
-        const items = await apiPost<NotificationItem[]>("/api/notifications/read-all");
-        setNotifications(items);
+        const before = notifications;
+        setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+        try {
+          setNotifications(await apiPost<NotificationItem[]>("/api/notifications/read-all"));
+        } catch (error) {
+          setNotifications(before);
+          notifyFailure();
+          throw error;
+        }
       },
       snoozeNotification: async (id, minutes) => {
-        const items = await apiPost<NotificationItem[]>("/api/notifications/snooze", { id, minutes });
-        setNotifications(items);
+        const before = notifications;
+        const until = Date.now() + minutes * 60_000;
+        setNotifications((current) =>
+          current.map((item) => (item.id === id ? { ...item, snoozedUntil: until } : item)),
+        );
+        try {
+          setNotifications(await apiPost<NotificationItem[]>("/api/notifications/snooze", { id, minutes }));
+        } catch (error) {
+          setNotifications(before);
+          notifyFailure();
+          throw error;
+        }
       },
     };
   }, [
@@ -639,6 +867,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     replaceTask,
     replaceNote,
     replaceEvent,
+    beginMutation,
+    finishMutation,
+    notifyFailure,
   ]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

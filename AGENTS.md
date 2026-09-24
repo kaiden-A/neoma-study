@@ -80,12 +80,19 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   port component classes rather than inventing new ones.
 - React Compiler lint is on: no `Date.now()` in render (use `lib/useNow.ts`), no
   synchronous `setState` in effects (lazy initializers or event handlers).
-- Uploads compress in the browser (`lib/files.ts`) and then POST to `/api/files`;
-  previews use short-lived presigned URLs resolved per render. Three limits must
-  stay ordered: client `MAX_FILE_BYTES` (15MB) ≤ server `MAX_UPLOAD_BYTES`
-  (15MB) < `experimental.proxyClientMaxBodySize` in `next.config.ts` (20MB).
-  Next buffers proxied bodies at 10MB by default and silently truncates larger
-  ones, so lowering that buffer below the file cap corrupts uploads.
+- Store mutations are optimistic: `updateTask`/`deleteTask`/`postponeTask` and
+  the note/event/notification patches apply locally first, roll back and toast
+  on failure (`beginMutation`/`finishMutation` in `lib/store.tsx`). Keep new
+  mutations on that path; `create*` stays server-first (ids come from the API).
+- Uploads compress in the browser (`lib/files.ts`) and then PUT straight to R2
+  with a presigned URL from `POST /api/files/presign`; `POST /api/files/{id}/confirm`
+  checks the object landed and records its real size. The API never sees the
+  bytes, so the Vercel 4.5MB body cap does not apply. The R2 bucket needs a CORS
+  rule allowing `PUT` from the app origins. The legacy multipart `POST /api/files`
+  still exists for tests; its three limits must stay ordered: client
+  `MAX_FILE_BYTES` (15MB) ≤ server `MAX_UPLOAD_BYTES` (15MB) <
+  `experimental.proxyClientMaxBodySize` in `next.config.ts` (20MB).
+  Previews use short-lived presigned GETs resolved per render.
 
 ## Features and seams
 
@@ -130,6 +137,9 @@ Firebase Hosting (`firebase.json`, `.firebaserc`; project `elysiaa-api`, site
 `neoma-api`) proxies `/api/**`, `/mcp`, `/docs`, `/docs/**`, `/redoc`,
 `/openapi.json` and `/.well-known/**` to the `neoma` service in
 `asia-southeast1`. `MCP_ALLOWED_HOSTS` must include every public hostname.
+`client/vercel.json` pins the Vercel functions to `sin1` (Singapore, next to
+Neon and Cloud Run); without it they default to `iad1` and every API call
+crosses the Pacific twice.
 
 If the client is ever moved onto Firebase Hosting itself, the cookie caveat
 applies: Hosting strips every cookie except `__session` on Cloud Run rewrites,

@@ -33,36 +33,40 @@ export function TaskRow({
   const done = task.status === "done";
   const group = task.groupId ? store.groupById(task.groupId) : null;
 
-  async function toggle() {
+  function toggle() {
     const next = done ? "todo" : "done";
-    await store.updateTask(task.id, { status: next });
+    void store.updateTask(task.id, { status: next }).catch(() => {});
     if (next === "done") {
       toast(`“${task.title.slice(0, 30)}” done`, {
         kind: "success",
         icon: "fa-check",
         actionLabel: "Undo",
-        onAction: () => void store.updateTask(task.id, { status: task.status }),
+        onAction: () => void store.updateTask(task.id, { status: task.status }).catch(() => {}),
       });
     }
   }
 
-  async function postpone() {
+  function postpone() {
     const before = task.dueAt;
-    await store.postponeTask(task.id);
+    void store.postponeTask(task.id).catch(() => {});
     toast("Moved to tomorrow", {
       kind: "success",
       actionLabel: "Undo",
-      onAction: () => void store.updateTask(task.id, { dueAt: before }),
+      onAction: () => void store.updateTask(task.id, { dueAt: before }).catch(() => {}),
     });
   }
 
   async function duplicate() {
-    const copy = await store.duplicateTask(task.id);
-    toast("Duplicated", {
-      kind: "success",
-      actionLabel: "Open",
-      onAction: () => onOpen?.(copy),
-    });
+    try {
+      const copy = await store.duplicateTask(task.id);
+      toast("Duplicated", {
+        kind: "success",
+        actionLabel: "Open",
+        onAction: () => onOpen?.(copy),
+      });
+    } catch {
+      toast("Could not duplicate that task", { kind: "danger" });
+    }
   }
 
   async function remove() {
@@ -73,8 +77,12 @@ export function TaskRow({
       variant: "danger",
     });
     if (!ok) return;
-    await store.deleteTask(task.id);
-    toast("Deleted", { kind: "info" });
+    try {
+      await store.deleteTask(task.id);
+      toast("Deleted", { kind: "info" });
+    } catch {
+      // The store rolls the row back and says what went wrong.
+    }
   }
 
   const assignees = task.assigneeIds

@@ -28,29 +28,33 @@ export function TasksPanel({ group }: { group: Group }) {
 
   const tasks = store.tasksForGroup(group.id);
 
-  async function setStatus(task: Task, status: TaskStatus) {
+  function setStatus(task: Task, status: TaskStatus) {
     if (task.status === status) return;
     const previous = task.status;
-    await store.updateTask(task.id, { status });
+    void store.updateTask(task.id, { status }).catch(() => {});
     if (status === "done") {
       toast(`“${task.title.slice(0, 28)}” done`, {
         kind: "success",
         icon: "fa-check",
         actionLabel: "Undo",
-        onAction: () => void store.updateTask(task.id, { status: previous }),
+        onAction: () => void store.updateTask(task.id, { status: previous }).catch(() => {}),
       });
     } else {
       toast(`Moved to ${STATUS_LABEL[status]}`, {
         kind: "success",
         actionLabel: "Undo",
-        onAction: () => void store.updateTask(task.id, { status: previous }),
+        onAction: () => void store.updateTask(task.id, { status: previous }).catch(() => {}),
       });
     }
   }
 
   async function remove(task: Task) {
-    await store.deleteTask(task.id);
-    toast("Task deleted", { kind: "info" });
+    try {
+      await store.deleteTask(task.id);
+      toast("Task deleted", { kind: "info" });
+    } catch {
+      // The store rolls the card back and says what went wrong.
+    }
   }
 
   return (

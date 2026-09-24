@@ -140,6 +140,7 @@ class FakeStorage(Storage):
         self.objects: dict[str, bytes] = {}
         self.deleted: list[str] = []
         self.copies: list[tuple[str, str]] = []
+        self.uploads: list[str] = []
 
     @property
     def configured(self) -> bool:
@@ -159,6 +160,15 @@ class FakeStorage(Storage):
 
     def presigned_get(self, key: str) -> str:
         return f"https://r2.test/{key}?signed=1"
+
+    def presigned_put(self, key: str, content_type: str) -> str:
+        del content_type
+        self.uploads.append(key)
+        return f"https://r2.test/{key}?put=1"
+
+    def head(self, key: str) -> int | None:
+        data = self.objects.get(key)
+        return len(data) if data is not None else None
 
 
 @pytest.fixture

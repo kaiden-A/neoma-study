@@ -55,6 +55,16 @@ export async function compressImage(file: File): Promise<{ full: Blob; thumb: Bl
   return { full, thumb };
 }
 
+/** Direct browser-to-R2 upload for a presigned PUT URL. */
+export async function putToR2(url: string, body: Blob, contentType: string): Promise<void> {
+  const response = await fetch(url, {
+    method: "PUT",
+    body,
+    headers: { "Content-Type": contentType },
+  });
+  if (!response.ok) throw new Error("Could not upload that file. Try again.");
+}
+
 /** The prototype's typeFromFile heuristic. */
 export function typeFromFile(file: File): "handwritten" | "slides" | "paper" | "note" {
   const name = file.name.toLowerCase();

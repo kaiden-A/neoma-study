@@ -83,5 +83,22 @@ class FileOut(BaseModel):
     size: int
 
 
+class FilePresignIn(BaseModel):
+    name: str = Field(default="file", max_length=300)
+    contentType: str = Field(default="application/octet-stream", max_length=160)
+    size: int = Field(default=0, ge=0)
+    groupId: str | None = None
+    thumb: bool = False
+
+
+class FilePresignOut(BaseModel):
+    id: str
+    name: str
+    contentType: str
+    size: int
+    uploadUrl: str
+    thumbUploadUrl: str | None
+
+
 class FileUrlOut(BaseModel):
     url: str

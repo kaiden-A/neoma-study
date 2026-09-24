@@ -160,9 +160,13 @@ export function NotesPanel({ group }: { group: Group }) {
 
   async function saveEdit() {
     if (!editTarget) return;
-    await store.updateNote(editTarget.id, { title: editTitle.trim() || editTarget.title, body: editBody });
-    setEditTarget(null);
-    toast("Note updated", { kind: "success" });
+    try {
+      await store.updateNote(editTarget.id, { title: editTitle.trim() || editTarget.title, body: editBody });
+      setEditTarget(null);
+      toast("Note updated", { kind: "success" });
+    } catch {
+      // The store rolls the note back and says what went wrong.
+    }
   }
 
   async function removeNote(note: Note) {
@@ -173,8 +177,12 @@ export function NotesPanel({ group }: { group: Group }) {
       variant: "danger",
     });
     if (!ok) return;
-    await store.deleteNote(note.id);
-    toast("Note deleted", { kind: "info" });
+    try {
+      await store.deleteNote(note.id);
+      toast("Note deleted", { kind: "info" });
+    } catch {
+      // The store puts the note back and says what went wrong.
+    }
   }
 
   async function copyLink() {

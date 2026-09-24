@@ -95,9 +95,13 @@ export function EventModal({
       variant: "danger",
     });
     if (!ok) return;
-    await store.deleteEvent(event.id);
-    toast("Event deleted", { kind: "info" });
-    onClose();
+    try {
+      await store.deleteEvent(event.id);
+      toast("Event deleted", { kind: "info" });
+      onClose();
+    } catch {
+      // The store puts the event back and says what went wrong.
+    }
   }
 
   async function google() {

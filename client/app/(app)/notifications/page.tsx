@@ -26,8 +26,8 @@ export default function NotificationsPage() {
   const items = store.notifications;
   const unread = items.filter((item) => !item.read).length;
 
-  async function openItem(id: string, route: string) {
-    await store.markNotificationsRead([id]);
+  function openItem(id: string, route: string) {
+    void store.markNotificationsRead([id]).catch(() => {});
     router.push(route);
   }
 
@@ -48,9 +48,10 @@ export default function NotificationsPage() {
               <button
                 type="button"
                 className="nm-btn nm-btn--secondary"
-                onClick={() =>
-                  void store.markAllNotificationsRead().then(() => toast("All caught up", { kind: "success" }))
-                }
+                onClick={() => {
+                  void store.markAllNotificationsRead().catch(() => {});
+                  toast("All caught up", { kind: "success" });
+                }}
               >
                 <i className="fa-solid fa-check-double" aria-hidden="true" />
                 Mark all read
@@ -121,11 +122,10 @@ export default function NotificationsPage() {
                         className="nm-iconbtn nm-iconbtn--sm"
                         aria-label="Snooze for an hour"
                         title="Snooze 1 hour"
-                        onClick={() =>
-                          void store
-                            .snoozeNotification(item.id, 60)
-                            .then(() => toast("Snoozed for 1 hour", { kind: "info" }))
-                        }
+                        onClick={() => {
+                          void store.snoozeNotification(item.id, 60).catch(() => {});
+                          toast("Snoozed for 1 hour", { kind: "info" });
+                        }}
                       >
                         <i className="fa-solid fa-clock" aria-hidden="true" />
                       </button>
@@ -135,7 +135,7 @@ export default function NotificationsPage() {
                           className="nm-iconbtn nm-iconbtn--sm"
                           aria-label="Mark as read"
                           title="Mark read"
-                          onClick={() => void store.markNotificationsRead([item.id])}
+                          onClick={() => void store.markNotificationsRead([item.id]).catch(() => {})}
                         >
                           <i className="fa-solid fa-check" aria-hidden="true" />
                         </button>
