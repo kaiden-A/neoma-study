@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
 import { Skeleton, SkeletonStatus, SkeletonText } from "@/components/ui/Skeleton";
+import { useIsPhone } from "@/lib/useMediaQuery";
 import { getServerVaultView, getVaultView, subscribeVaultView } from "@/lib/vaultView";
 
 /** Route-shaped loading placeholders. Used by the AppShell gate during
@@ -89,6 +90,8 @@ function VaultGrid({ count = 6 }: { count?: number }) {
 
 export function VaultSkeleton() {
   const view = useSyncExternalStore(subscribeVaultView, getVaultView, getServerVaultView);
+  const isPhone = useIsPhone();
+  const shape = isPhone ? "list" : view;
   return (
     <div className="nm-page nm-page--vault">
       <Head titleWidth="284px" actionWidths={["104px"]} />
@@ -110,7 +113,7 @@ export function VaultSkeleton() {
             <Skeleton width="184px" height="20px" />
             <Skeleton className="ml-auto" width="58px" height="12px" />
           </div>
-          {view === "grid" ? <VaultGrid /> : <VaultRows />}
+          {shape === "grid" ? <VaultGrid /> : <VaultRows />}
         </div>
       </div>
     </div>

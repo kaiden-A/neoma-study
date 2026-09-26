@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
 // iOS Safari has no install prompt, so the only path to the home screen is
@@ -34,8 +35,10 @@ function eligible(): boolean {
 
 export function InstallHint() {
   const show = useSyncExternalStore(subscribe, eligible, () => false);
+  const pathname = usePathname();
 
-  if (!show) return null;
+  // The note page has its own fixed action bar at the bottom.
+  if (!show || pathname.startsWith("/vault/")) return null;
 
   return (
     <div className="nm-installhint" role="note">

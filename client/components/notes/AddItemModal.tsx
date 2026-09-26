@@ -135,10 +135,10 @@ export function AddItemModal({
     }
   }
 
-  const modes: { id: Mode; label: string; icon: string }[] = [
-    { id: "note", label: "Write a note", icon: "fa-pen" },
-    { id: "upload", label: "Upload a file", icon: "fa-arrow-up-from-bracket" },
-    { id: "link", label: "Save a link", icon: "fa-link" },
+  const modes: { id: Mode; label: string; short: string; icon: string }[] = [
+    { id: "note", label: "Write a note", short: "Note", icon: "fa-pen" },
+    { id: "upload", label: "Upload a file", short: "File", icon: "fa-arrow-up-from-bracket" },
+    { id: "link", label: "Save a link", short: "Link", icon: "fa-link" },
   ];
 
   const blocked =
@@ -169,6 +169,7 @@ export function AddItemModal({
             type="button"
             role="tab"
             aria-selected={mode === item.id}
+            aria-label={item.label}
             className={`nm-seg-btn${mode === item.id ? " is-active" : ""}`}
             onClick={() => {
               setMode(item.id);
@@ -176,7 +177,8 @@ export function AddItemModal({
             }}
           >
             <i className={`fa-solid ${item.icon}`} aria-hidden="true" />
-            {item.label}
+            <span className="nm-seg-label">{item.label}</span>
+            <span className="nm-seg-label nm-seg-label--short">{item.short}</span>
           </button>
         ))}
       </div>

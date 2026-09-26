@@ -12,6 +12,7 @@ import { Menu } from "@/components/ui/Menu";
 import { useOverlays } from "@/components/ui/Overlays";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
+import { useIsPhone } from "@/lib/useMediaQuery";
 import { getServerVaultView, getVaultView, setVaultView, subscribeVaultView, type VaultView } from "@/lib/vaultView";
 
 type FilterId = "all" | "notes" | "files" | "links";
@@ -39,6 +40,10 @@ export default function VaultPage() {
   const [deleteSubject, setDeleteSubject] = useState<string | null>(null);
   const [moveTo, setMoveTo] = useState("");
   const view = useSyncExternalStore(subscribeVaultView, getVaultView, getServerVaultView);
+  const isPhone = useIsPhone();
+  // Rows are the only layout that works on a phone; a grid preference saved on
+  // a desktop must not turn phones into one giant card per row.
+  const effectiveView: VaultView = isPhone ? "list" : view;
 
   const notes = store.personalNotes();
   const visible = useMemo(() => {
@@ -271,7 +276,7 @@ export default function VaultPage() {
                 )
               }
             />
-          ) : view === "grid" ? (
+          ) : effectiveView === "grid" ? (
             <div className="nm-notegrid">
               {visible.map((note) => (
                 <NoteCard key={note.id} note={note} onOpen={openNote} />

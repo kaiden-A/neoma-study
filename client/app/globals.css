@@ -1561,9 +1561,12 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
   position: absolute; left: 10px; right: 10px; bottom: 0;
   height: 1px; background: var(--rule);
 }
-.nm-note-layout { grid-template-columns: minmax(0, 1fr) 290px; }
-.nm-preview--image .nm-preview-imgwrap { display: block; background: color-mix(in srgb, var(--muted-bg) 55%, transparent); }
-.nm-preview--image img { display: block; width: 100%; max-height: 520px; object-fit: contain; }
+/* only above the responsive breakpoint: the stacked single-column rule from
+   section 20 must win on smaller screens */
+@media (min-width: 1081px) {
+  .nm-note-layout { grid-template-columns: minmax(0, 1fr) 290px; }
+}
+.nm-preview--image .nm-preview-imgwrap { display: block; background: color-mix(in srgb, var(--muted-bg) 55%, transparent); }.nm-preview--image img { display: block; width: 100%; max-height: 520px; object-fit: contain; }
 .nm-preview-bar {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 12px;
@@ -1782,4 +1785,92 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 @media (max-width: 620px) {
   .nm-skel-cell { min-height: 78px; }
   .nm-skel-card-thumb { height: 96px; }
+}
+
+/* ============================================================================
+   27. notes on phones — scrollable filter chips, list-only vault, the note
+   action bar and the details sheet. Desktop rules above are untouched.
+   ========================================================================= */
+.nm-note-bottombar { display: none; }
+.nm-seg-label--short { display: none; }
+.nm-savestate.is-dirty { opacity: 1; color: var(--dial-today); }
+
+@media (max-width: 900px) {
+  /* ---------- vault list ---------- */
+  .nm-vault-tagline { display: none; }
+  .nm-vault-toolbar .nm-search { flex: 1 1 100%; }
+  .nm-viewtoggle { display: none; }
+
+  .nm-vault-nav { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .nm-vault-nav::-webkit-scrollbar { display: none; }
+  .nm-vault-nav > * { flex: 0 0 auto; }
+  .nm-vault-nav .nm-folder-count { display: none; }
+  .nm-folders { padding: 9px 11px; }
+
+  /* the segmented pill becomes one scrollable row of chips */
+  .nm-vault-filters {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 0 0 6px;
+    background: transparent;
+    border-radius: 0;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nm-vault-filters::-webkit-scrollbar { display: none; }
+  .nm-vault-filters .nm-seg-btn {
+    flex: 0 0 auto;
+    gap: 6px;
+    min-height: 38px;
+    padding: 0.44rem 0.72rem;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: var(--card);
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .nm-vault-filters .nm-seg-btn.is-active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+    box-shadow: none;
+  }
+  .nm-vault-filters .nm-seg-btn.is-active .nm-filter-count { color: inherit; opacity: 0.75; }
+  .nm-filter-count { font-size: 0.68rem; }
+  .nm-vault-head .nm-section-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* rows: thumb-sized tap targets with touch feedback */
+  .nm-noterow-link { min-height: 62px; }
+  .nm-noterow-link:active { background: var(--muted-bg); }
+  .nm-noterow-meta .nm-chip { max-width: 132px; }
+  .nm-noterow-snippet { display: block; }
+
+  /* ---------- note page ---------- */
+  .nm-note-side { display: none; }
+  .nm-save-desktop { display: none; }
+  .nm-page--note { padding-bottom: 136px; }
+  .nm-note-bottombar {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: calc(54px + env(safe-area-inset-bottom, 0px));
+    z-index: 85;
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--card) 96%, transparent);
+    border-top: 1px solid var(--rule);
+    backdrop-filter: blur(8px);
+  }
+  .nm-note-bottombar .nm-btn { min-height: 44px; }
+  .nm-note-bottombar .nm-btn--primary { flex: 1 1 auto; }
+}
+
+@media (max-width: 620px) {
+  .nm-seg-label { display: none; }
+  .nm-seg-label--short { display: inline; }
+  .nm-btn-label { display: none; }
+  .nm-modal { max-height: 88dvh; }
+  .nm-modal-ft .nm-btn--primary { flex: 1 1 auto; }
 }
