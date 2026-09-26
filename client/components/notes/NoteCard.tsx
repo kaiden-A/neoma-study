@@ -1,16 +1,14 @@
 "use client";
 
-import { useState } from "react";
-
+import { useNoteActions } from "@/components/notes/NoteActions";
 import { NoteThumb } from "@/components/notes/NoteThumb";
-import { ShareToGroupModal } from "@/components/notes/ShareToGroupModal";
 import { MarkerChip } from "@/components/ui/bits";
-import { Menu } from "@/components/ui/Menu";
-import { fmtRelative, truncate } from "@/lib/dates";
+import { fmtRelative, plain, truncate } from "@/lib/dates";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
 
+/** Gallery card, used when the vault is switched to grid view. */
 export function NoteCard({
   note,
   onOpen,
@@ -21,25 +19,31 @@ export function NoteCard({
   onChanged?: () => void;
 }) {
   const store = useStore();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
+  const { openMenu, overlays } = useNoteActions(note, { onChange: onChanged });
   const type = noteType(note.type);
   const group = note.groupId ? store.groupById(note.groupId) : null;
   const subject = note.subjectId ? store.subjectById(note.subjectId) : null;
+  const hasThumb = note.type !== "note" && note.type !== "link";
 
   return (
-    <article className={`nm-notecard nm-mk-${type.marker}`}>
-      <button type="button" className="nm-notecard-link" aria-label={`Open ${note.title}`} onClick={() => onOpen(note)}>
-        {note.type !== "note" && note.type !== "link" ? <NoteThumb note={note} alt={`Preview of ${note.title}`} /> : null}
-        {note.type === "link" ? (
-          <div className="nm-notecard-thumb nm-notecard-thumb--link">
-            <i className="fa-solid fa-arrow-up-right-from-square nm-thumb-ph" aria-hidden="true" />
-          </div>
-        ) : null}
+    <article className={`nm-notecard nm-mk-${type.marker}${note.pinned ? " is-pinned" : ""}`}>
+      <button
+        type="button"
+        className="nm-notecard-link"
+        aria-label={`Open ${note.title}`}
+        onClick={() => onOpen(note)}
+      >
+        {hasThumb ? (
+          <NoteThumb note={note} alt="" className="nm-notecard-thumb" />
+        ) : (
+          <span className={`nm-notecard-strip nm-mk-${type.marker}`}>
+            <i className={`fa-solid ${type.icon}`} aria-hidden="true" />
+          </span>
+        )}
       </button>
       <div className="nm-notecard-bd">
         <div className="nm-notecard-top">
-          <span className={`nm-chip nm-chip--sm nm-mk-${type.marker}`}>
+          <span className={`nm-chip nm-chip--sm nm-chip--mark nm-mk-${type.marker}`}>
             <i className={`fa-solid ${type.icon}`} aria-hidden="true" />
             {type.label}
           </span>
@@ -49,77 +53,39 @@ export function NoteCard({
               Pinned
             </span>
           ) : null}
+          <button
+            type="button"
+            className="nm-iconbtn nm-iconbtn--sm nm-notecard-menu"
+            aria-label="Item actions"
+            onClick={openMenu}
+          >
+            <i className="fa-solid fa-ellipsis" aria-hidden="true" />
+          </button>
         </div>
         <h3 className="nm-notecard-title">
           <button type="button" className="nm-link" onClick={() => onOpen(note)}>
             {note.title}
           </button>
         </h3>
-        {note.body ? <p className="nm-notecard-body">{truncate(note.body.replace(/\s+/g, " "), 120)}</p> : null}
+        {note.body ? <p className="nm-notecard-body">{truncate(plain(note.body), 120)}</p> : null}
         <div className="nm-notecard-ft">
           {group ? (
-            <span className={`nm-chip nm-chip--sm nm-chip--link nm-mk-${group.color}`}>
+            <span className={`nm-chip nm-chip--sm nm-chip--link nm-mk-${group.color}`} title={group.name}>
               <span className="nm-dot" />
-              {group.name}
+              <span className="nm-chip-name">{group.name}</span>
             </span>
           ) : subject ? (
             <MarkerChip name={subject.name} markerKey={subject.color} small />
           ) : null}
-          {note.tags.slice(0, 3).map((tag) => (
+          {note.tags.slice(0, 2).map((tag) => (
             <span className="nm-tag" key={tag}>
               #{tag}
             </span>
           ))}
           <span className="nm-mono nm-time">{fmtRelative(note.updatedAt)}</span>
-          <button
-            type="button"
-            className="nm-iconbtn nm-iconbtn--sm"
-            aria-label="Item actions"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(true);
-            }}
-          >
-            <i className="fa-solid fa-ellipsis" aria-hidden="true" />
-          </button>
         </div>
       </div>
-
-      {menuOpen ? (
-        <Menu
-          label="Item actions"
-          onClose={() => setMenuOpen(false)}
-          style={{ position: "fixed", right: 24, top: 130 }}
-          items={[
-            { label: "Open", icon: "fa-arrow-up-right-from-square", onSelect: () => onOpen(note) },
-            {
-              label: note.pinned ? "Unpin" : "Pin to top",
-              icon: "fa-thumbtack",
-              onSelect: () => {
-                void store
-                  .updateNote(note.id, { pinned: !note.pinned })
-                  .then(() => onChanged?.())
-                  .catch(() => {});
-              },
-            },
-            { label: "Share to group", icon: "fa-share-nodes", onSelect: () => setShareOpen(true) },
-            { separator: true },
-            {
-              label: "Delete",
-              icon: "fa-trash",
-              danger: true,
-              onSelect: () => {
-                void store
-                  .deleteNote(note.id)
-                  .then(() => onChanged?.())
-                  .catch(() => {});
-              },
-            },
-          ]}
-        />
-      ) : null}
-
-      {shareOpen ? <ShareToGroupModal note={note} onClose={() => setShareOpen(false)} /> : null}
+      {overlays}
     </article>
   );
 }

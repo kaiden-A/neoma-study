@@ -1,16 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { AddItemModal } from "@/components/notes/AddItemModal";
 import { NoteCard } from "@/components/notes/NoteCard";
+import { NoteRow } from "@/components/notes/NoteRow";
 import { EmptyState } from "@/components/ui/bits";
 import { Modal } from "@/components/ui/Modal";
 import { Menu } from "@/components/ui/Menu";
 import { useOverlays } from "@/components/ui/Overlays";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
+import { getServerVaultView, getVaultView, setVaultView, subscribeVaultView, type VaultView } from "@/lib/vaultView";
 
 type FilterId = "all" | "notes" | "files" | "links";
 
@@ -33,9 +35,10 @@ export default function VaultPage() {
   const [adding, setAdding] = useState(false);
   const [subjectModal, setSubjectModal] = useState<"new" | null>(null);
   const [subjectName, setSubjectName] = useState("");
-  const [subjectMenu, setSubjectMenu] = useState<string | null>(null);
+  const [subjectMenu, setSubjectMenu] = useState<{ id: string; left: number; top: number } | null>(null);
   const [deleteSubject, setDeleteSubject] = useState<string | null>(null);
   const [moveTo, setMoveTo] = useState("");
+  const view = useSyncExternalStore(subscribeVaultView, getVaultView, getServerVaultView);
 
   const notes = store.personalNotes();
   const visible = useMemo(() => {
@@ -70,6 +73,7 @@ export default function VaultPage() {
   };
 
   const selectedSubject = subjectId === "all" ? null : store.subjectById(subjectId);
+  const filtering = Boolean(query.trim()) || filter !== "all";
 
   function openNote(note: Note) {
     router.push(`/vault/${note.id}`);
@@ -116,7 +120,7 @@ export default function VaultPage() {
             </button>
           </div>
         </div>
-        <p className="nm-meta">
+        <p className="nm-meta nm-vault-tagline">
           Typed notes, photos of your handwriting, slide decks, past papers and links — all searchable, all yours.
         </p>
       </div>
@@ -133,30 +137,39 @@ export default function VaultPage() {
               <span>All notes</span>
               <span className="nm-mono nm-folder-count">{notes.length}</span>
             </button>
-            {store.subjects.map((subject) => (
-              <div className={`nm-folderrow${subjectId === subject.id ? " is-active" : ""}`} key={subject.id}>
-                <button
-                  type="button"
-                  className={`nm-folders${subjectId === subject.id ? " is-active" : ""}`}
-                  onClick={() => setSubjectId(subject.id)}
-                >
-                  <span className={`nm-dot nm-mk-${subject.color}`} />
-                  <span>{subject.name}</span>
-                  <span className="nm-mono nm-folder-count">
-                    {notes.filter((note) => note.subjectId === subject.id).length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="nm-iconbtn nm-iconbtn--sm"
-                  aria-label="Subject options"
-                  title="Subject options"
-                  onClick={() => setSubjectMenu(subject.id)}
-                >
-                  <i className="fa-solid fa-ellipsis" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
+            {store.subjects.map((subject) => {
+              const count = notes.filter((note) => note.subjectId === subject.id).length;
+              return (
+                <div className={`nm-folderrow${subjectId === subject.id ? " is-active" : ""}`} key={subject.id}>
+                  <button
+                    type="button"
+                    className={`nm-folders${subjectId === subject.id ? " is-active" : ""}`}
+                    title={subject.name}
+                    onClick={() => setSubjectId(subject.id)}
+                  >
+                    <span className={`nm-dot nm-mk-${subject.color}`} />
+                    <span>{subject.name}</span>
+                    <span className="nm-mono nm-folder-count">{count}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="nm-iconbtn nm-iconbtn--sm"
+                    aria-label="Subject options"
+                    title="Subject options"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setSubjectMenu({
+                        id: subject.id,
+                        left: Math.max(12, Math.min(rect.left, window.innerWidth - 200)),
+                        top: Math.min(rect.bottom + 6, window.innerHeight - 200),
+                      });
+                    }}
+                  >
+                    <i className="fa-solid fa-ellipsis" aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
             <button type="button" className="nm-folders nm-folders--add" onClick={() => setSubjectModal("new")}>
               <i className="fa-solid fa-plus" aria-hidden="true" />
               <span>New subject</span>
@@ -175,23 +188,44 @@ export default function VaultPage() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
+              {query ? (
+                <button type="button" className="nm-search-clear" aria-label="Clear search" onClick={() => setQuery("")}>
+                  <i className="fa-solid fa-xmark" aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
-            <div className="nm-filterchips">
-              {FILTERS.map((item) => (
+            <div className="nm-viewtoggle" role="group" aria-label="Layout">
+              {(["list", "grid"] as VaultView[]).map((item) => (
                 <button
-                  key={item.id}
+                  key={item}
                   type="button"
-                  className={`nm-chip nm-chip--sm nm-chip--link${item.marker ? ` nm-mk-${item.marker}` : ""}${
-                    filter === item.id ? " is-active" : ""
-                  }`}
-                  onClick={() => setFilter(item.id)}
+                  className={`nm-viewtoggle-btn${view === item ? " is-active" : ""}`}
+                  aria-pressed={view === item}
+                  aria-label={item === "list" ? "List view" : "Grid view"}
+                  title={item === "list" ? "List view" : "Grid view"}
+                  onClick={() => setVaultView(item)}
                 >
-                  <i className={`fa-solid ${item.icon}`} aria-hidden="true" />
-                  {item.label}
-                  <span className="nm-mono">{counts[item.id]}</span>
+                  <i className={`fa-solid ${item === "list" ? "fa-list" : "fa-table-cells-large"}`} aria-hidden="true" />
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="nm-seg nm-vault-filters" role="tablist" aria-label="Filter notes">
+            {FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={filter === item.id}
+                className={`nm-seg-btn${filter === item.id ? " is-active" : ""}`}
+                onClick={() => setFilter(item.id)}
+              >
+                <i className={`fa-solid ${item.icon}${item.marker ? ` nm-filter-icon nm-mk-${item.marker}` : ""}`} aria-hidden="true" />
+                {item.label}
+                <span className="nm-mono nm-filter-count">{counts[item.id]}</span>
+              </button>
+            ))}
           </div>
 
           <div className="nm-vault-head">
@@ -209,23 +243,44 @@ export default function VaultPage() {
                   ? `No matches for “${query}”`
                   : selectedSubject
                     ? `Nothing in ${selectedSubject.name} yet`
-                    : "No notes here yet"
+                    : filter !== "all"
+                      ? `No ${FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} here yet`
+                      : "No notes here yet"
               }
               body={
-                query
+                query || filter !== "all"
                   ? "Try a tag, a subject name, or a word from the notes."
                   : "Write a note, photograph your handwriting, or drop in a slide deck or past paper."
               }
               action={
-                <button type="button" className="nm-btn nm-btn--primary" onClick={() => setAdding(true)}>
-                  Add something
-                </button>
+                filtering ? (
+                  <button
+                    type="button"
+                    className="nm-btn nm-btn--secondary"
+                    onClick={() => {
+                      setQuery("");
+                      setFilter("all");
+                    }}
+                  >
+                    Clear search and filters
+                  </button>
+                ) : (
+                  <button type="button" className="nm-btn nm-btn--primary" onClick={() => setAdding(true)}>
+                    Add something
+                  </button>
+                )
               }
             />
-          ) : (
+          ) : view === "grid" ? (
             <div className="nm-notegrid">
               {visible.map((note) => (
                 <NoteCard key={note.id} note={note} onOpen={openNote} />
+              ))}
+            </div>
+          ) : (
+            <div className="nm-notelist">
+              {visible.map((note) => (
+                <NoteRow key={note.id} note={note} onOpen={openNote} />
               ))}
             </div>
           )}
@@ -277,17 +332,17 @@ export default function VaultPage() {
         <Menu
           label="Subject options"
           onClose={() => setSubjectMenu(null)}
-          style={{ position: "fixed", left: 220, top: 200 }}
+          style={{ position: "fixed", left: subjectMenu.left, top: subjectMenu.top }}
           items={[
             {
               label: "Rename",
               icon: "fa-pen",
               onSelect: () => {
-                const subject = store.subjectById(subjectMenu);
+                const subject = store.subjectById(subjectMenu.id);
                 if (subject) void renameSubject(subject.id, subject.name);
               },
             },
-            { label: "Delete", icon: "fa-trash", danger: true, onSelect: () => setDeleteSubject(subjectMenu) },
+            { label: "Delete", icon: "fa-trash", danger: true, onSelect: () => setDeleteSubject(subjectMenu.id) },
           ]}
         />
       ) : null}

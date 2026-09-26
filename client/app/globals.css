@@ -1407,3 +1407,275 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
   --font-sans: var(--font-plex-sans), system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
+
+/* ============================================================================
+   24. notes redesign — file tiles, vault list, cards, editor, add modal.
+   Same tokens, type and markers as the rest of the app; these rules only
+   reshape the notes surfaces.
+   ========================================================================= */
+
+/* file tiles: images preview, anything else gets the type icon on a
+   marker-tinted wash instead of pointing an <img> at a slide deck */
+.nm-filetile {
+  display: grid;
+  place-items: center;
+  color: var(--mk);
+  background:
+    radial-gradient(130% 130% at 18% 0%, color-mix(in srgb, var(--mk) 22%, transparent), transparent 62%),
+    var(--muted-bg);
+  overflow: hidden;
+}
+.nm-filetile-icon { font-size: 1.45rem; opacity: 0.85; }
+.nm-filetile--image { background: var(--muted-bg); }
+.nm-filetile--image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.nm-filetile--loading .nm-filetile-icon { animation: nm-tile-pulse 1.4s ease-in-out infinite; }
+@keyframes nm-tile-pulse { 50% { opacity: 0.28; } }
+
+/* chips truncate instead of running past card edges */
+.nm-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- vault list page ---------- */
+.nm-vault-main { min-width: 0; }
+.nm-search-clear {
+  position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--ink-muted);
+  cursor: pointer;
+}
+.nm-search-clear:hover { background: var(--muted-bg); color: var(--ink); }
+.nm-vault-toolbar .nm-search-input { padding-right: 36px; }
+.nm-viewtoggle {
+  display: inline-flex; flex: 0 0 auto; gap: 2px;
+  padding: 3px;
+  background: var(--muted-bg);
+  border-radius: var(--radius-control);
+}
+.nm-viewtoggle-btn {
+  width: 36px; height: 31px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 8px;
+  background: transparent; color: var(--ink-muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.nm-viewtoggle-btn:hover { color: var(--ink); }
+.nm-viewtoggle-btn.is-active { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.nm-vault-filters { margin-bottom: 14px; flex-wrap: wrap; }
+.nm-vault-filters .nm-seg-btn { flex: 0 1 auto; }
+.nm-filter-count { font-size: 0.66rem; color: var(--ink-muted); }
+.nm-vault-filters .nm-seg-btn.is-active .nm-filter-count { color: inherit; opacity: 0.65; }
+.nm-filter-icon.nm-mk-amber { color: var(--mark-amber); }
+.nm-filter-icon.nm-mk-mint { color: var(--mark-mint); }
+.nm-filter-icon.nm-mk-sky { color: var(--mark-sky); }
+.nm-filter-icon.nm-mk-coral { color: var(--mark-coral); }
+.nm-filter-icon.nm-mk-violet { color: var(--mark-violet); }
+.nm-filter-icon.nm-mk-pink { color: var(--mark-pink); }
+.nm-vault-side { min-width: 0; }
+.nm-folders { min-width: 0; }
+.nm-folder-count { font-size: 0.72rem; }
+
+/* ---------- list rows (default layout) ---------- */
+.nm-notelist { display: flex; flex-direction: column; gap: 8px; }
+.nm-noterow {
+  position: relative;
+  display: flex; align-items: center; gap: 2px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-left: 3px solid transparent;
+  border-radius: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.nm-noterow:hover, .nm-noterow:focus-within { border-left-color: var(--mk); box-shadow: 0 2px 12px rgba(10, 14, 12, 0.06); }
+.nm-noterow.is-pinned { border-left-color: var(--mk); }
+.nm-noterow-link {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 4px 10px 11px;
+  border: 0; border-radius: 12px;
+  background: transparent; color: inherit;
+  text-align: left; cursor: pointer;
+}
+.nm-noterow-link:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.nm-noterow-thumb { width: 46px; height: 46px; flex: 0 0 auto; border: 1px solid var(--rule); border-radius: 10px; font-size: 0.92rem; }
+.nm-noterow-bd { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.nm-noterow-titlerow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.nm-noterow-pin { color: var(--mk); font-size: 0.68rem; flex: 0 0 auto; }
+.nm-noterow-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; font-weight: 600; }
+.nm-noterow-snippet { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: var(--ink-muted); }
+.nm-noterow-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; min-width: 0; overflow: hidden; }
+.nm-noterow-meta > * { flex: 0 0 auto; }
+.nm-noterow-meta .nm-chip { flex: 0 1 auto; max-width: 220px; }
+.nm-noterow-meta .nm-time { margin-left: auto; font-size: 0.72rem; color: var(--ink-muted); }
+.nm-noterow-menu { flex: 0 0 auto; margin-right: 8px; opacity: 0; transition: opacity 0.15s ease; }
+.nm-noterow:hover .nm-noterow-menu, .nm-noterow:focus-within .nm-noterow-menu, .nm-noterow-menu:focus-visible { opacity: 1; }
+@media (hover: none) {
+  .nm-noterow-menu, .nm-notecard-menu { opacity: 1; }
+}
+
+/* ---------- grid cards ---------- */
+.nm-notecard { transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
+.nm-notecard:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(10, 14, 12, 0.08); }
+.nm-notecard.is-pinned { box-shadow: inset 0 0 0 1px var(--mk); }
+.nm-notecard-strip {
+  display: flex; align-items: center;
+  height: 44px; padding: 0 14px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--mk);
+  background: linear-gradient(90deg, var(--mk-soft), transparent 72%);
+}
+.nm-notecard-strip i { font-size: 0.95rem; }
+.nm-notecard-menu { margin-left: auto; opacity: 0; transition: opacity 0.15s ease; }
+.nm-notecard:hover .nm-notecard-menu, .nm-notecard:focus-within .nm-notecard-menu, .nm-notecard-menu:focus-visible { opacity: 1; }
+.nm-notecard-top { align-items: center; }
+.nm-notecard-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nm-notecard-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nm-notecard-ft .nm-chip { max-width: 100%; }
+.nm-notecard-ft .nm-time { margin-left: auto; font-size: 0.72rem; color: var(--ink-muted); }
+
+/* ---------- note page ---------- */
+.nm-note-main { min-width: 0; }
+.nm-note-top {
+  position: sticky;
+  top: 56px;
+  z-index: 25;
+  margin: 0 -10px 18px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+  backdrop-filter: blur(10px);
+}
+.nm-note-top::after {
+  content: "";
+  position: absolute; left: 10px; right: 10px; bottom: 0;
+  height: 1px; background: var(--rule);
+}
+.nm-note-layout { grid-template-columns: minmax(0, 1fr) 290px; }
+.nm-preview--image .nm-preview-imgwrap { display: block; background: color-mix(in srgb, var(--muted-bg) 55%, transparent); }
+.nm-preview--image img { display: block; width: 100%; max-height: 520px; object-fit: contain; }
+.nm-preview-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--rule);
+}
+.nm-preview--pdf .nm-preview-bar { border-top: 0; border-bottom: 1px solid var(--rule); }
+.nm-preview-barinfo { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.nm-preview-name { font-size: 0.84rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nm-preview-meta { font-size: 0.7rem; color: var(--ink-muted); }
+.nm-preview-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.nm-preview-frame { display: block; width: 100%; height: 70vh; min-height: 360px; max-height: 720px; border: 0; background: var(--muted-bg); }
+.nm-preview--file { display: flex; align-items: center; gap: 12px; padding: 14px; }
+.nm-preview-fileicon {
+  width: 46px; height: 46px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: var(--mk-soft); color: var(--mk);
+  font-size: 1.1rem;
+}
+.nm-preview--file .nm-preview-filetext { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.nm-preview--loading { display: grid; place-items: center; min-height: 140px; }
+.nm-preview--loading .nm-preview-fileicon { background: transparent; animation: nm-tile-pulse 1.4s ease-in-out infinite; }
+
+.nm-writer {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  padding: 12px 14px 9px;
+}
+.nm-writer-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.nm-writer-head .nm-label { margin: 0; }
+.nm-writer-count { margin-left: auto; font-size: 0.7rem; color: var(--ink-muted); }
+.nm-writer .nm-note-body { min-height: 300px; border: 0; padding: 2px 0 10px; background: transparent; }
+.nm-writer .nm-note-body:focus { border-color: transparent; box-shadow: none; }
+.nm-writer-help { margin-top: 7px; padding-top: 8px; border-top: 1px dashed var(--rule); }
+
+/* ---------- add modal dropzone ---------- */
+.nm-dropzone {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 15px;
+  margin-bottom: 14px;
+  border: 1px dashed color-mix(in srgb, var(--ink-muted) 45%, var(--rule));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--card) 55%, transparent);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.nm-dropzone:hover, .nm-dropzone.is-dragging { border-color: var(--ink-muted); background: var(--muted-bg); }
+.nm-dropzone.is-dragging { border-style: solid; border-color: var(--ink); }
+.nm-dropzone.has-file { border-style: solid; border-color: var(--rule); background: var(--card); }
+.nm-dropzone:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.nm-dropzone-icon {
+  width: 42px; height: 42px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: var(--muted-bg); color: var(--ink-muted);
+  font-size: 1rem;
+}
+.nm-dropzone.has-file .nm-dropzone-icon { background: var(--mk-soft); color: var(--mk); }
+.nm-dropzone-bd { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.nm-dropzone-name { font-size: 0.86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nm-dropzone-meta { font-size: 0.74rem; color: var(--ink-muted); }
+.nm-dropzone-change { flex: 0 0 auto; font-size: 0.78rem; font-weight: 600; text-decoration: underline; color: var(--ink-muted); }
+
+/* ---------- notes responsive ---------- */
+@media (max-width: 900px) {
+  .nm-note-top { top: 54px; margin: 0 -6px 14px; padding: 6px; }
+  .nm-noterow-meta .nm-tag { display: none; }
+  .nm-noterow-thumb { width: 40px; height: 40px; }
+  .nm-noterow-link { padding: 9px 2px 9px 9px; gap: 10px; }
+  .nm-noterow-meta .nm-chip { max-width: 150px; }
+  .nm-preview--image img { max-height: 380px; }
+  .nm-preview-actions .nm-btn--ghost { display: none; }
+}
+@media (max-width: 620px) {
+  .nm-vault-filters { display: flex; }
+  .nm-vault-filters .nm-seg-btn { flex: 1 1 auto; padding: 0.4rem 0.5rem; font-size: 0.76rem; }
+  .nm-noterow-snippet { display: none; }
+  .nm-note-top { border-radius: 0; margin: 0 0 12px; }
+  .nm-preview--file { flex-wrap: wrap; }
+  .nm-preview-bar { flex-wrap: wrap; }
+  .nm-preview-actions { width: 100%; }
+  .nm-preview-actions .nm-btn { flex: 1 1 auto; }
+}
+
+/* ============================================================================
+   25. install hint (PWA) — iOS Safari only, above the mobile tab bar
+   ========================================================================= */
+.nm-installhint {
+  position: fixed;
+  left: 12px; right: 12px; bottom: 74px;
+  z-index: 85;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--mark-amber);
+  border-radius: 12px;
+  box-shadow: 0 10px 26px rgba(10, 14, 12, 0.16);
+}
+.nm-installhint-icon { color: var(--ink-muted); padding-top: 2px; }
+.nm-installhint-text { flex: 1 1 auto; min-width: 0; font-size: 0.8rem; color: var(--ink-muted); }
+.nm-installhint-text strong { color: var(--ink); font-weight: 600; }
+.nm-installhint-close {
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--ink-muted);
+  cursor: pointer;
+}
+.nm-installhint-close:hover { background: var(--muted-bg); color: var(--ink); }
+@media (min-width: 901px) {
+  .nm-installhint { display: none; }
+}

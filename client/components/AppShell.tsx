@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CommandPalette } from "@/components/CommandPalette";
+import { InstallHint } from "@/components/InstallHint";
 import { MoonMark } from "@/components/MoonMark";
 import { QuickCapture } from "@/components/QuickCapture";
 import { Avatar } from "@/components/ui/bits";
@@ -191,6 +192,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} /> : null}
-      {captureOpen ? <QuickCapture onClose={() => setCaptureOpen(false)} /> : null}    </>
+      {captureOpen ? <QuickCapture onClose={() => setCaptureOpen(false)} /> : null}
+      <InstallHint />
+    </>
   );
 }

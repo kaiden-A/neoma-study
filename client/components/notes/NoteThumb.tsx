@@ -2,11 +2,16 @@
 
 import { useEffect, useState } from "react";
 
+import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
 
-/** Resolves a short-lived presigned URL per render, like the prototype's
- * per-route object URLs. */
+/** The file tile used by cards, rows and the group feed.
+ *
+ * Previews only exist for images (the browser compresses and uploads a JPEG
+ * thumb at upload time). Pointing an <img> at a slide deck or PDF just shows
+ * the alt text, so anything that is not an image gets the note type's icon on
+ * a marker-tinted tile instead. */
 export function NoteThumb({
   note,
   alt,
@@ -19,10 +24,12 @@ export function NoteThumb({
   const { fileUrl } = useStore();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const type = noteType(note.type);
+  const isImage = Boolean(note.fileId && note.fileType?.startsWith("image/"));
 
   useEffect(() => {
     let active = true;
-    if (!note.fileId) return;
+    if (!isImage || !note.fileId) return;
     fileUrl(note.fileId, true)
       .then((value) => {
         if (active) setUrl(value);
@@ -33,26 +40,28 @@ export function NoteThumb({
     return () => {
       active = false;
     };
-  }, [fileUrl, note.fileId]);
+  }, [fileUrl, isImage, note.fileId]);
 
-  if (!note.fileId || failed) {
+  if (!isImage || failed) {
     return (
-      <div className={className}>
-        <i className="fa-solid fa-file nm-thumb-ph" aria-hidden="true" />
-      </div>
+      <span className={`${className} nm-filetile nm-mk-${type.marker}`}>
+        <i className={`fa-solid ${type.icon} nm-filetile-icon`} aria-hidden="true" />
+      </span>
     );
   }
+
   if (!url) {
     return (
-      <div className={className}>
-        <i className="fa-solid fa-circle-notch fa-spin nm-thumb-ph" aria-hidden="true" />
-      </div>
+      <span className={`${className} nm-filetile nm-filetile--loading nm-mk-${type.marker}`}>
+        <i className={`fa-solid ${type.icon} nm-filetile-icon`} aria-hidden="true" />
+      </span>
     );
   }
+
   return (
-    <div className={className}>
+    <span className={`${className} nm-filetile nm-filetile--image`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={alt} loading="lazy" />
-    </div>
+      <img src={url} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+    </span>
   );
 }

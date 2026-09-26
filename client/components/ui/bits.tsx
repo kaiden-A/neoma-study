@@ -122,7 +122,7 @@ export function MarkerChip({ name, markerKey, small = false }: { name: string; m
   return (
     <span className={`nm-chip${small ? " nm-chip--sm" : ""} nm-chip--mark nm-mk-${markerKey}`}>
       <MarkerDot markerKey={markerKey} />
-      {name}
+      <span className="nm-chip-name">{name}</span>
     </span>
   );
 }

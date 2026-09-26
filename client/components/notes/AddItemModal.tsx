@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { domainOf } from "@/lib/dates";
 import { MAX_FILE_BYTES, compressImage, fmtBytes, parseTags, typeFromFile } from "@/lib/files";
+import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { NoteType } from "@/lib/types";
 
@@ -40,6 +41,7 @@ export function AddItemModal({
   const [fileType, setFileType] = useState<NoteType>("handwritten");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   function pickFile(picked: File | null) {
     setFile(picked);
@@ -139,6 +141,9 @@ export function AddItemModal({
     { id: "link", label: "Save a link", icon: "fa-link" },
   ];
 
+  const blocked =
+    saving || (mode === "upload" && !file) || (mode === "link" && !/^https?:\/\//i.test(url.trim()));
+
   return (
     <Modal
       title="Add to your notes"
@@ -151,7 +156,7 @@ export function AddItemModal({
           <button type="button" className="nm-btn nm-btn--ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="nm-btn nm-btn--primary" onClick={() => void save()} disabled={saving}>
+          <button type="button" className="nm-btn nm-btn--primary" onClick={() => void save()} disabled={blocked}>
             {saving ? "Saving…" : "Save"}
           </button>
         </>
@@ -178,24 +183,54 @@ export function AddItemModal({
 
       {mode === "upload" ? (
         <>
-          <Field
-            label="File"
+          <label
+            className={`nm-dropzone${dragging ? " is-dragging" : ""}${file ? " has-file" : ""}`}
             htmlFor="ai-file"
-            help="Photos of handwritten notes are compressed automatically. Files up to 15 MB are stored in your Neoma storage."
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              pickFile(event.dataTransfer.files?.[0] ?? null);
+            }}
           >
             <input
               id="ai-file"
               type="file"
-              className="nm-input nm-file"
+              className="nm-sr"
               accept="image/*,.pdf,.ppt,.pptx,.doc,.docx,.txt"
               onChange={(event) => pickFile(event.target.files?.[0] ?? null)}
             />
-          </Field>
-          {file ? (
-            <p className="nm-mono nm-help">
-              {file.name} · {fmtBytes(file.size)}
-            </p>
-          ) : null}
+            {file ? (
+              <>
+                <span className={`nm-dropzone-icon nm-mk-${noteType(fileType).marker}`}>
+                  <i className={`fa-solid ${noteType(fileType).icon}`} aria-hidden="true" />
+                </span>
+                <span className="nm-dropzone-bd">
+                  <span className="nm-dropzone-name">{file.name}</span>
+                  <span className="nm-mono nm-dropzone-meta">
+                    {fmtBytes(file.size)} · up to 15 MB
+                  </span>
+                </span>
+                <span className="nm-dropzone-change">Change</span>
+              </>
+            ) : (
+              <>
+                <span className="nm-dropzone-icon">
+                  <i className="fa-solid fa-arrow-up-from-bracket" aria-hidden="true" />
+                </span>
+                <span className="nm-dropzone-bd">
+                  <span className="nm-dropzone-name">Drop a file here, or click to browse</span>
+                  <span className="nm-dropzone-meta">
+                    Photos are compressed automatically. Slides, papers and documents up to 15 MB.
+                  </span>
+                </span>
+              </>
+            )}
+          </label>
           <Field label="What is it?" htmlFor="ai-type">
             <select
               id="ai-type"

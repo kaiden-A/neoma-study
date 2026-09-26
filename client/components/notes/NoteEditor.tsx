@@ -4,27 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { FilePreview } from "@/components/notes/FilePreview";
+import { useNoteActions } from "@/components/notes/NoteActions";
 import { EmptyState, MarkerChip } from "@/components/ui/bits";
-import { Menu } from "@/components/ui/Menu";
-import { useOverlays } from "@/components/ui/Overlays";
-import { ShareToGroupModal } from "@/components/notes/ShareToGroupModal";
 import { fmtDateTime, fmtRelative } from "@/lib/dates";
-import { fmtBytes, parseTags } from "@/lib/files";
+import { parseTags } from "@/lib/files";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 
 export function NoteEditor({ noteId }: { noteId: string }) {
   const store = useStore();
   const router = useRouter();
-  const { toast, confirm } = useOverlays();
   const note = store.noteById(noteId);
 
   const [title, setTitle] = useState(note?.title ?? "");
   const [body, setBody] = useState(note?.body ?? "");
   const [tags, setTags] = useState((note?.tags ?? []).join(", "));
-  const [saved, setSaved] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileMissing, setFileMissing] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,8 +43,8 @@ export function NoteEditor({ noteId }: { noteId: string }) {
           body: patch?.body ?? body,
           tags: patch?.tags ?? parseTags(tags),
         });
-        setSaved(true);
-        setTimeout(() => setSaved(false), 1200);
+        setSavedAt(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }));
+        setTimeout(() => setSavedAt(null), 1600);
       } catch {
         // The store rolls the note back and says what went wrong.
       }
@@ -86,6 +82,10 @@ export function NoteEditor({ noteId }: { noteId: string }) {
     };
   }, [note?.fileId, store]);
 
+  const actions = useNoteActions(note, {
+    onDelete: () => router.push(note?.groupId ? `/groups/${note.groupId}?tab=notes` : "/vault"),
+  });
+
   if (!note) {
     return (
       <div className="nm-page">
@@ -111,68 +111,52 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const isFile = Boolean(note.fileId);
   const words = body.trim() ? body.trim().split(/\s+/).length : 0;
 
-  async function remove() {
-    if (!note) return;
-    const ok = await confirm({
-      title: `Delete “${note.title}”?`,
-      message: group
-        ? "This removes the shared note for everyone in the group."
-        : "This removes it from your notes.",
-      confirmLabel: "Delete item",
-      variant: "danger",
-    });
-    if (!ok) return;
-    try {
-      await store.deleteNote(note.id);
-      toast("Deleted", { kind: "info" });
-      router.push(group ? `/groups/${group.id}?tab=notes` : "/vault");
-    } catch {
-      // The store puts the note back and says what went wrong.
-    }
-  }
-
   return (
-    <div className="nm-page">
+    <div className="nm-page nm-page--note">
+      {actions.overlays}
+
       <div className="nm-note-top">
         <Link className="nm-backlink" href="/vault">
           <i className="fa-solid fa-arrow-left" aria-hidden="true" />
           Notes
         </Link>
-        <span className={`nm-savestate nm-mono${saved ? " is-saved" : ""}`} aria-live="polite">
-          {saved ? `Saved ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : ""}
+        <span className="nm-savestate nm-mono" aria-live="polite">
+          {savedAt ? `Saved ${savedAt}` : ""}
         </span>
         <div className="nm-note-topactions">
-          <button type="button" className="nm-btn nm-btn--secondary nm-btn--sm" onClick={() => setShareOpen(true)}>
-            <i className="fa-solid fa-share-nodes" aria-hidden="true" />
-            Share to group
-          </button>
-          <button
-            type="button"
-            className="nm-iconbtn"
-            aria-label="Item actions"
-            onClick={() => setMenuOpen(true)}
-          >
+          {group ? null : (
+            <button type="button" className="nm-btn nm-btn--secondary nm-btn--sm" onClick={() => actions.share()}>
+              <i className="fa-solid fa-share-nodes" aria-hidden="true" />
+              Share to group
+            </button>
+          )}
+          <button type="button" className="nm-iconbtn" aria-label="Item actions" onClick={actions.openMenu}>
             <i className="fa-solid fa-ellipsis" aria-hidden="true" />
           </button>
         </div>
       </div>
 
       <div className="nm-note-layout">
-        <div>
+        <div className="nm-note-main">
           <div className="nm-note-chips">
-            <span className={`nm-chip nm-chip--sm nm-mk-${type.marker}`}>
+            <span className={`nm-chip nm-chip--sm nm-chip--mark nm-mk-${type.marker}`}>
               <i className={`fa-solid ${type.icon}`} aria-hidden="true" />
               {type.label}
             </span>
             {group ? (
-              <span className={`nm-chip nm-chip--sm nm-chip--link nm-mk-${group.color}`}>
+              <span className={`nm-chip nm-chip--sm nm-chip--link nm-mk-${group.color}`} title={group.name}>
                 <span className="nm-dot" />
-                {group.name}
+                <span className="nm-chip-name">{group.name}</span>
               </span>
             ) : subject ? (
               <MarkerChip name={subject.name} markerKey={subject.color} small />
             ) : null}
-            <span className="nm-mono nm-meta">{words} word{words === 1 ? "" : "s"}</span>
+            {note.pinned ? (
+              <span className="nm-chip nm-chip--sm nm-chip--muted" title="Pinned">
+                <i className="fa-solid fa-thumbtack" aria-hidden="true" />
+                Pinned
+              </span>
+            ) : null}
           </div>
 
           <input
@@ -199,60 +183,44 @@ export function NoteEditor({ noteId }: { noteId: string }) {
           ) : null}
 
           {isFile ? (
-            <figure className="nm-preview">
-              {fileMissing ? (
-                <div className="nm-thumb-ph">Preview unavailable</div>
-              ) : note.fileType?.startsWith("image/") ? (
-                fileUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={fileUrl} alt={`Preview of ${note.title}`} />
-                ) : (
-                  <div className="nm-thumb-ph">
-                    <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
-                  </div>
-                )
-              ) : fileUrl ? (
-                <object className="nm-preview-frame" data={fileUrl} type={note.fileType ?? undefined}>
-                  Open the file to view it
-                </object>
-              ) : (
-                <div className="nm-thumb-ph">
-                  <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
-                </div>
-              )}
-            </figure>
+            <FilePreview note={note} url={fileUrl} failed={fileMissing} loading={!fileUrl && !fileMissing} />
           ) : null}
 
-          {!isFile && note.type !== "link" ? null : null}
-
-          <label className="nm-label" htmlFor="note-body">
-            {isFile ? "Your notes on this file" : "Notes"}
-          </label>
-          <textarea
-            id="note-body"
-            className="nm-textarea nm-note-body"
-            rows={14}
-            value={body}
-            placeholder="Write it out in your own words — that is what makes it stick."
-            onChange={(event) => {
-              setBody(event.target.value);
-              scheduleSave();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Tab") {
-                event.preventDefault();
-                const target = event.currentTarget;
-                const start = target.selectionStart;
-                const next = `${body.slice(0, start)}  ${body.slice(target.selectionEnd)}`;
-                setBody(next);
-                requestAnimationFrame(() => {
-                  target.selectionStart = target.selectionEnd = start + 2;
-                });
+          <div className="nm-writer">
+            <div className="nm-writer-head">
+              <label className="nm-label" htmlFor="note-body">
+                {isFile ? "Your notes on this file" : "Notes"}
+              </label>
+              <span className="nm-mono nm-writer-count">
+                {words} word{words === 1 ? "" : "s"}
+              </span>
+            </div>
+            <textarea
+              id="note-body"
+              className="nm-textarea nm-note-body"
+              rows={14}
+              value={body}
+              placeholder="Write it out in your own words — that is what makes it stick."
+              onChange={(event) => {
+                setBody(event.target.value);
                 scheduleSave();
-              }
-            }}
-          />
-          <p className="nm-help">Plain text. Line breaks are preserved. Everything saves automatically.</p>
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Tab") {
+                  event.preventDefault();
+                  const target = event.currentTarget;
+                  const start = target.selectionStart;
+                  const next = `${body.slice(0, start)}  ${body.slice(target.selectionEnd)}`;
+                  setBody(next);
+                  requestAnimationFrame(() => {
+                    target.selectionStart = target.selectionEnd = start + 2;
+                  });
+                  scheduleSave();
+                }
+              }}
+            />
+            <p className="nm-help nm-writer-help">Plain text. Line breaks are preserved. Everything saves automatically.</p>
+          </div>
         </div>
 
         <aside className="nm-note-side">
@@ -297,35 +265,6 @@ export function NoteEditor({ noteId }: { noteId: string }) {
                 />
                 <p className="nm-help">Comma separated.</p>
               </div>
-              {isFile ? (
-                <div className="nm-field">
-                  <span className="nm-label">File</span>
-                  <p className="nm-mono nm-meta">
-                    {note.fileName ?? "stored file"}
-                    {note.fileSize ? ` · ${fmtBytes(note.fileSize)}` : ""}
-                  </p>
-                  <div className="nm-inline-actions">
-                    <button
-                      type="button"
-                      className="nm-btn nm-btn--secondary nm-btn--sm"
-                      onClick={() => {
-                        if (fileUrl) window.open(fileUrl, "_blank", "noopener");
-                        else toast("File is not available", { kind: "danger" });
-                      }}
-                    >
-                      Open file
-                    </button>
-                    <a className="nm-btn nm-btn--ghost nm-btn--sm" href={fileUrl ?? "#"} download={note.fileName ?? undefined}>
-                      Download
-                    </a>
-                  </div>
-                </div>
-              ) : null}
-              {note.pinned ? (
-                <p className="nm-help">
-                  <i className="fa-solid fa-thumbtack" aria-hidden="true" /> Pinned to the top of your notes.
-                </p>
-              ) : null}
             </div>
           </div>
 
@@ -339,33 +278,18 @@ export function NoteEditor({ noteId }: { noteId: string }) {
               {note.createdBy && note.createdBy !== store.user?.id ? (
                 <p className="nm-meta">Shared by {store.userName(note.createdBy)}</p>
               ) : null}
-              <button type="button" className="nm-btn nm-btn--danger nm-btn--ghost nm-btn--sm mt-3" onClick={() => void remove()}>
+              <button
+                type="button"
+                className="nm-btn nm-btn--danger nm-btn--ghost nm-btn--sm mt-3"
+                onClick={() => void actions.remove()}
+              >
+                <i className="fa-solid fa-trash" aria-hidden="true" />
                 Delete item
               </button>
             </div>
           </div>
         </aside>
       </div>
-
-      {menuOpen ? (
-        <Menu
-          label="Item actions"
-          onClose={() => setMenuOpen(false)}
-          style={{ position: "fixed", right: 24, top: 120 }}
-          items={[
-            {
-              label: note.pinned ? "Unpin" : "Pin to top",
-              icon: "fa-thumbtack",
-              onSelect: () => void store.updateNote(note.id, { pinned: !note.pinned }).catch(() => {}),
-            },
-            { label: "Share to group", icon: "fa-share-nodes", onSelect: () => setShareOpen(true) },
-            { separator: true },
-            { label: "Delete item", icon: "fa-trash", danger: true, onSelect: () => void remove() },
-          ]}
-        />
-      ) : null}
-
-      {shareOpen ? <ShareToGroupModal note={note} onClose={() => setShareOpen(false)} /> : null}
     </div>
   );
 }
