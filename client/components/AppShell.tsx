@@ -5,8 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CommandPalette } from "@/components/CommandPalette";
+import { BootError } from "@/components/BootError";
 import { InstallHint } from "@/components/InstallHint";
 import { MoonMark } from "@/components/MoonMark";
+import { RouteProgress } from "@/components/RouteProgress";
+import { RouteSkeleton } from "@/components/skeletons/RouteSkeleton";
 import { QuickCapture } from "@/components/QuickCapture";
 import { Avatar } from "@/components/ui/bits";
 import { Menu } from "@/components/ui/Menu";
@@ -27,7 +30,7 @@ const TABS = [...NAV, { href: "/settings", label: "Settings", icon: "fa-sliders"
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, settings, updateSettings, unreadCount } = useStore();
+  const { user, settings, status, bootSlow, updateSettings, unreadCount } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -114,7 +117,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {user ? (
                 <Avatar name={user.name} email={user.email} color={user.color} size={30} />
               ) : (
-                <span className="nm-avatar" style={{ width: 30, height: 30 }} />
+                <span className="nm-skel" style={{ width: 30, height: 30, borderRadius: 999 }} aria-hidden="true" />
               )}
             </button>
           </div>
@@ -152,7 +155,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </header>
 
           <main id="view" className={`nm-view${planner ? " nm-view--grid" : ""}`} tabIndex={-1}>
-            {children}
+            {status === "loading" ? (
+              <>
+                {bootSlow ? (
+                  <p className="nm-boot-hint" role="status">
+                    <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
+                    Still loading — the server may be waking up.
+                  </p>
+                ) : null}
+                <RouteSkeleton />
+              </>
+            ) : status === "error" ? (
+              <BootError />
+            ) : (
+              children
+            )}
           </main>
         </div>
       </div>
@@ -193,6 +210,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} /> : null}
       {captureOpen ? <QuickCapture onClose={() => setCaptureOpen(false)} /> : null}
+      <RouteProgress />
       <InstallHint />
     </>
   );

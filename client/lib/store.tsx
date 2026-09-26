@@ -94,7 +94,14 @@ export interface TaskCreateInput {
 
 export type TaskPatchInput = Partial<Omit<TaskCreateInput, "groupId">> & { groupId?: string | null };
 
+/** Bootstrap lifecycle: skeletons while loading, retry panel on error, the app
+ * once ready. `ready` is kept as a convenience alias for `status === "ready"`. */
+export type BootStatus = "loading" | "ready" | "error";
+
 interface StoreValue {
+  status: BootStatus;
+  bootSlow: boolean;
+  retry: () => Promise<void>;
   ready: boolean;
   user: PublicUser | null;
   settings: UserSettings | null;
@@ -236,7 +243,11 @@ function postponedDue(dueAt: number | null): number {
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const autoSyncDone = useRef(false);
-  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState<BootStatus>("loading");
+  const [bootSlow, setBootSlow] = useState(false);
+  const booted = useRef(false);
+  const inflight = useRef(false);
+  const slowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [user, setUser] = useState<PublicUser | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -286,28 +297,68 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setNotes(data.notes ?? []);
     setEvents(data.events ?? []);
     setNotifications(data.notifications ?? []);
-    setReady(true);
+    booted.current = true;
+    setStatus("ready");
   }, []);
 
   const refresh = useCallback(async () => {
-    try {
-      // Plain fetch, not apiFetch: on public pages (the join preview) an
-      // anonymous visitor must not be bounced to /login.
-      const response = await fetch("/api/bootstrap", { cache: "no-store" });
-      if (response.status === 401) {
-        setReady(true);
-        return;
+    if (inflight.current) return;
+    inflight.current = true;
+    // Only a first load shows skeletons; a background refresh over real data
+    // must never flash them.
+    if (!booted.current) {
+      setStatus("loading");
+      if (!slowTimer.current) {
+        slowTimer.current = setTimeout(() => setBootSlow(true), 4000);
       }
-      if (!response.ok) return;
-      applyBootstrap((await response.json()) as Bootstrap);
-    } catch {
-      // offline or transient; pages render their empty states
+    }
+    try {
+      // A cold Cloud Run instance can take a while: two attempts, 20s each,
+      // before the retry panel appears.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20_000);
+        try {
+          // Plain fetch, not apiFetch: on public pages (the join preview) an
+          // anonymous visitor must not be bounced to /login.
+          const response = await fetch("/api/bootstrap", { cache: "no-store", signal: controller.signal });
+          if (response.status === 401) {
+            booted.current = true;
+            setStatus("ready");
+            return;
+          }
+          if (!response.ok) throw new Error(`bootstrap failed: ${response.status}`);
+          applyBootstrap((await response.json()) as Bootstrap);
+          return;
+        } catch {
+          if (booted.current) return;
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            continue;
+          }
+          setStatus("error");
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+    } finally {
+      inflight.current = false;
+      if (slowTimer.current) {
+        clearTimeout(slowTimer.current);
+        slowTimer.current = null;
+      }
+      setBootSlow(false);
     }
   }, [applyBootstrap]);
 
+  const retry = useCallback(async () => {
+    await refresh();
+  }, [refresh]);
+
+  const ready = status === "ready";
+
   useEffect(() => {
     // Fetch-on-mount; the await settles before any state lands.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
 
@@ -496,6 +547,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       events,
       notifications,
       refresh,
+      retry,
+      status,
+      bootSlow,
       updateSettings: async (patch: UserSettingsPatch) => {
         const next = await apiPatch<UserSettings>("/api/settings", patch);
         setSettings(next);
@@ -854,6 +908,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, [
     ready,
+    status,
+    bootSlow,
     user,
     settings,
     groups,
@@ -863,6 +919,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     events,
     notifications,
     refresh,
+    retry,
     replaceGroup,
     replaceTask,
     replaceNote,

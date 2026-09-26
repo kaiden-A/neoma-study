@@ -1679,3 +1679,107 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 @media (min-width: 901px) {
   .nm-installhint { display: none; }
 }
+
+/* ============================================================================
+   26. loading — skeleton shimmer, route skeleton shapes, navigation progress
+   ========================================================================= */
+.nm-skel {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    var(--muted-bg) 25%,
+    color-mix(in srgb, var(--ink) 8%, transparent) 37%,
+    var(--muted-bg) 63%
+  );
+  background-size: 400% 100%;
+  animation: nm-skel 1.5s ease infinite;
+}
+@keyframes nm-skel {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+.nm-skel-text { display: flex; flex-direction: column; gap: 8px; }
+.nm-skel--line { height: 11px; }
+.nm-skel-meta { margin-top: 9px; }
+.nm-skel-mb { margin-bottom: 14px; }
+.nm-skel-mt { margin-top: 18px; }
+.nm-skel-stack { display: flex; flex-direction: column; gap: 9px; }
+
+/* vault */
+.nm-skel-folder { border-radius: 9px; }
+.nm-skel-search { flex: 1 1 260px; }
+.nm-skel-seg { margin-bottom: 14px; border-radius: var(--radius-control); }
+.nm-skel-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 11px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: 12px;
+}
+.nm-skel-row-bd { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.nm-skel-thumb { width: 46px; height: 46px; border-radius: 10px; flex: 0 0 auto; }
+
+/* grid cards + group cards */
+.nm-skel-card { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-card); overflow: hidden; }
+.nm-skel-card-thumb { height: 128px; border-radius: 0; }
+.nm-skel-card-bd { display: flex; flex-direction: column; gap: 9px; padding: 12px 14px 15px; }
+
+/* calendar cells */
+.nm-skel-cell { min-height: 104px; border-radius: 10px; }
+
+/* navigation progress */
+.nm-progress {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  z-index: 200;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}.nm-progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--mark-amber);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--mark-amber) 70%, transparent);
+}
+.nm-progress.is-active .nm-progress-bar { animation: nm-progress-grow 6s cubic-bezier(0.1, 0.7, 0.2, 1) forwards; }
+.nm-progress.is-done { opacity: 0; }
+.nm-progress.is-done .nm-progress-bar { width: 100%; }
+@keyframes nm-progress-grow {
+  from { width: 0; }
+  to { width: 90%; }
+}
+
+/* "server may be waking up" pill, shown after ~4s of loading */
+.nm-boot-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 0 8px 22px rgba(10, 14, 12, 0.12);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.nm-boot-hint i { color: var(--mark-amber); }
+
+@media (max-width: 900px) {
+  .nm-boot-hint { bottom: 78px; font-size: 0.76rem; }
+}
+
+@media (max-width: 620px) {
+  .nm-skel-cell { min-height: 78px; }
+  .nm-skel-card-thumb { height: 96px; }
+}
