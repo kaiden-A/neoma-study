@@ -8,9 +8,11 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     String,
+    Text,
     Uuid,
+    text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base
@@ -55,6 +57,10 @@ class FileObject(Base):
     name: Mapped[str] = mapped_column(String(300), default="", nullable=False)
     content_type: Mapped[str] = mapped_column(String(160), default="application/octet-stream", nullable=False)
     size: Mapped[int] = mapped_column(default=0, nullable=False)
+    # Best-effort text extraction (pypdf / python-docx / python-pptx / plain)
+    # so search can look inside decks and past papers. Never blocks an upload.
+    extracted_text: Mapped[str | None] = mapped_column(Text)
+    extracted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -116,6 +122,13 @@ class Note(Base):
 
     tags: Mapped[list[str]] = mapped_column(ARRAY(String(40)), default=list, nullable=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
+
+    # The study artefact: reader position, highlights and video resume points.
+    # JSONB so the shape can grow without a migration (validated on read/write
+    # by schemas.notes.NoteStudy).
+    study: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

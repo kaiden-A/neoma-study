@@ -151,6 +151,7 @@ def export_account(db: DbSession, user: User) -> dict[str, Any]:
                     "fileId": str(note.file_id) if note.file_id else None,
                     "pinned": note.pinned,
                     "tags": list(note.tags or []),
+                    "study": dict(note.study or {}),
                     "createdAt": to_ms(note.created_at),
                     "updatedAt": to_ms(note.updated_at),
                 }
@@ -331,6 +332,7 @@ def import_account(
             file_id=file_id,
             pinned=bool(note_row.get("pinned")),
             tags=[str(tag)[:40] for tag in note_row.get("tags", [])][:30],
+            study=dict(note_row.get("study") or {}),
             created_by=user.id,
         )
         db.add(note)

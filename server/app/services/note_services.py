@@ -7,20 +7,55 @@ are independent blobs. Answering a request creates the answer note and closes
 the request in one service call.
 """
 
+import re
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from ..models import FileObject, GroupMember, GroupTopic, Note, NoteScope, NoteType, Subject, User, utcnow
-from ..schemas.notes import AnswerRequest, GroupNoteCreate, NoteCreate, NoteOut, NotePatch, RequestOut
+from ..schemas.notes import (
+    AnswerRequest,
+    GroupNoteCreate,
+    NoteCreate,
+    NoteOut,
+    NotePatch,
+    NoteStudy,
+    RequestOut,
+)
 from ..utils import domain_of, to_ms
-from . import access, file_services, storage_services
+from . import access, extract_services, file_services, storage_services
 from .errors import InvalidError, NotFoundError
 
 MISSING_NOTE = "That item is gone."
 MISSING_SUBJECT = "That subject is gone."
 MAX_TAGS = 30
+SNIPPET_BEFORE = 60
+SNIPPET_AFTER = 120
+
+
+def _like_pattern(needle: str) -> str:
+    escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _match_snippet(db: DbSession, note: Note, needle: str) -> str | None:
+    """A one-line excerpt when the note's attached file text matched."""
+    if not note.file_id:
+        return None
+    file = db.get(FileObject, note.file_id)
+    text = file.extracted_text if file else None
+    if not text:
+        return None
+    index = text.lower().find(needle.lower())
+    if index < 0:
+        return None
+    page = extract_services.search_page(text, index)
+    start = max(0, index - SNIPPET_BEFORE)
+    end = min(len(text), index + len(needle) + SNIPPET_AFTER)
+    excerpt = re.sub(r"\s+", " ", text[start:end]).strip()
+    label = "found in file" + (f" · page {page}" if page else "")
+    return f"{label}: …{excerpt}…"
 
 
 def _clean_tags(tags: list[str]) -> list[str]:
@@ -36,7 +71,7 @@ def _visible_group_ids(db: DbSession, user: User) -> list[uuid.UUID]:
     return list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)).all())
 
 
-def note_out(db: DbSession, note: Note) -> NoteOut:
+def note_out(db: DbSession, note: Note, *, query: str | None = None) -> NoteOut:
     file = db.get(FileObject, note.file_id) if note.file_id else None
     request = None
     if note.type is NoteType.request:
@@ -62,6 +97,8 @@ def note_out(db: DbSession, note: Note) -> NoteOut:
         fileSize=file.size if file else None,
         pinned=note.pinned,
         tags=list(note.tags or []),
+        study=NoteStudy.model_validate(note.study or {}),
+        matchSnippet=_match_snippet(db, note, query) if query else None,
         createdBy=str(note.created_by) if note.created_by else None,
         createdAt=to_ms(note.created_at) or 0,
         updatedAt=to_ms(note.updated_at) or 0,
@@ -105,21 +142,27 @@ def list_notes(
         statement = statement.where(Note.subject_id == subject_id)
     if type_filter is not None:
         statement = statement.where(Note.type == type_filter)
-    notes = list(db.scalars(statement.order_by(Note.updated_at.desc())).all())
     if query:
-        # Search title, body, URL and tags in one pass; the vault loads every
-        # note anyway, so a Python filter keeps the SQL (and the array search)
-        # simple.
-        needle = query.strip().lower()
-        notes = [
-            note
-            for note in notes
-            if needle in note.title.lower()
-            or needle in note.body.lower()
-            or needle in (note.url or "").lower()
-            or any(needle in tag.lower() for tag in (note.tags or []))
-        ]
-    return [note_out(db, note) for note in notes]
+        # SQL ILIKE across title, body, URL, tags and the extracted text of the
+        # attached file (a deck's slide text, a PDF's pages). tsvector can
+        # replace this when volume justifies it.
+        needle = query.strip()
+        pattern = _like_pattern(needle)
+        file_match = select(FileObject.id).where(
+            FileObject.extracted_text.ilike(pattern, escape="\\")
+        )
+        statement = statement.where(
+            or_(
+                Note.title.ilike(pattern, escape="\\"),
+                Note.body.ilike(pattern, escape="\\"),
+                Note.url.ilike(pattern, escape="\\"),
+                func.array_to_string(Note.tags, " ").ilike(pattern, escape="\\"),
+                Note.file_id.in_(file_match),
+            )
+        )
+        notes = list(db.scalars(statement.order_by(Note.updated_at.desc())).all())
+        return [note_out(db, note, query=needle) for note in notes]
+    return [note_out(db, note) for note in db.scalars(statement.order_by(Note.updated_at.desc())).all()]
 
 
 def _require_subject(db: DbSession, user: User, subject_id: str | None) -> uuid.UUID | None:
@@ -224,6 +267,8 @@ def update_note(db: DbSession, user: User, note_id: uuid.UUID, patch: NotePatch)
         note.tags = _clean_tags(patch.tags)
     if "pinned" in fields and patch.pinned is not None:
         note.pinned = patch.pinned
+    if "study" in fields and patch.study is not None:
+        note.study = patch.study.model_dump(mode="json")
     db.commit()
     db.refresh(note)
     return note_out(db, note)
@@ -300,7 +345,7 @@ def _copy_file_to_group(
     )
     db.add(copy)
     db.flush()
-    key = f"groups/{group_id}/{copy.id}"
+    key = file_services.file_key(f"groups/{group_id}/{copy.id}", source.name)
     copy.key = key
     storage.copy(source.key, key)
     if source.thumb_key:

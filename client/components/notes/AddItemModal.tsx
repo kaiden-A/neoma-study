@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { domainOf } from "@/lib/dates";
 import { MAX_FILE_BYTES, compressImage, fmtBytes, parseTags, typeFromFile } from "@/lib/files";
+import { parseVideoUrl } from "@/lib/links";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { NoteType } from "@/lib/types";
@@ -41,6 +42,7 @@ export function AddItemModal({
   const [fileType, setFileType] = useState<NoteType>("handwritten");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [fetchingTitle, setFetchingTitle] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   function pickFile(picked: File | null) {
@@ -118,11 +120,23 @@ export function AddItemModal({
         setSaving(false);
         return;
       }
+      const link = url.trim();
+      let nextTitle = title.trim();
+      if (!nextTitle && parseVideoUrl(link)) {
+        setFetchingTitle(true);
+        try {
+          nextTitle = (await store.linkPreview(link)).title?.trim() ?? "";
+        } catch {
+          // No preview: fall through to the domain name.
+        } finally {
+          setFetchingTitle(false);
+        }
+      }
       const note = await store.createNote({
         type: "link",
-        title: title.trim() || domainOf(url.trim()),
+        title: nextTitle || domainOf(link),
         body,
-        url: url.trim(),
+        url: link,
         subjectId: subjectId || null,
         tags: parseTags(tags),
       });
@@ -157,7 +171,7 @@ export function AddItemModal({
             Cancel
           </button>
           <button type="button" className="nm-btn nm-btn--primary" onClick={() => void save()} disabled={blocked}>
-            {saving ? "Saving…" : "Save"}
+            {fetchingTitle ? "Fetching video title…" : saving ? "Saving…" : "Save"}
           </button>
         </>
       }

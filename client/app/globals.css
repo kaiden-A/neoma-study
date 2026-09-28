@@ -263,6 +263,7 @@ img { max-width: 100%; display: block; }
 }
 .nm-navitem--sm { flex-direction: row; gap: 8px; padding: 8px 10px; justify-content: flex-start; font-size: 0.74rem; }
 .nm-navitem--sm i { font-size: 0.88rem; }
+.nm-navitem .nm-badge { top: 4px; right: 14px; }
 .nm-rail-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
 .nm-railnext { min-width: 0; }
 .nm-railcard {
@@ -1348,9 +1349,10 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
     background: var(--card);
     border-top: 1px solid var(--rule);
   }
-  .nm-tabitem { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 56px; padding: 4px 6px; border-radius: 9px; font-size: 0.64rem; color: var(--ink-muted); }
+  .nm-tabitem { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 56px; padding: 4px 6px; border-radius: 9px; font-size: 0.64rem; color: var(--ink-muted); }
   .nm-tabitem i { font-size: 1rem; }
   .nm-tabitem.is-active { background: var(--mark-amber-soft); color: var(--ink); }
+  .nm-tabitem .nm-badge { top: -2px; right: 8px; }
   .nm-page { padding: 20px 16px 96px; }
   .nm-topbar { padding: 8px 12px; }
   .nm-searchbtn-text, .nm-searchbtn .nm-kbd { display: none; }
@@ -1589,6 +1591,257 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-preview--file .nm-preview-filetext { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .nm-preview--loading { display: grid; place-items: center; min-height: 140px; }
 .nm-preview--loading .nm-preview-fileicon { background: transparent; animation: nm-tile-pulse 1.4s ease-in-out infinite; }
+
+/* ---------- video link facade ---------- */
+.nm-videofacade {
+  position: relative; display: block; width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0; border: 0; cursor: pointer;
+  background: #000;
+}
+.nm-videofacade img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.nm-videofacade-fallback {
+  display: grid; place-items: center;
+  width: 100%; height: 100%;
+  background: var(--mk-soft); color: var(--mk);
+  font-size: 3rem;
+}
+.nm-videofacade-play {
+  position: absolute; inset: 0; margin: auto;
+  width: 64px; height: 64px;
+  display: grid; place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, #000 62%, transparent);
+  color: #fff; font-size: 1.3rem;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+  pointer-events: none;
+}
+.nm-videofacade:hover .nm-videofacade-play {
+  transform: scale(1.07);
+  background: color-mix(in srgb, #000 78%, transparent);
+}
+.nm-preview-frame--video { height: auto; min-height: 0; max-height: none; aspect-ratio: 16 / 9; }
+
+/* ---------- office + text previews ---------- */
+.nm-preview--office .nm-preview-bar { border-top: 0; border-bottom: 1px solid var(--rule); }
+.nm-preview--text .nm-preview-bar { border-top: 0; border-bottom: 1px solid var(--rule); }
+.nm-preview-caption { padding: 7px 12px 9px; margin: 0; }
+.nm-preview-text {
+  margin: 0; padding: 14px;
+  max-height: 480px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.55;
+  background: var(--muted-bg);
+}
+
+/* ---------- pdf reader ---------- */
+.nm-pdf { display: block; }
+.nm-pdf-toolbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--rule);
+}
+.nm-pdf-spacer { flex: 1 1 auto; }
+.nm-pdf-pagecount { font-size: 0.72rem; color: var(--ink-muted); }
+.nm-pdf-jump { width: 54px; padding: 4px 6px; text-align: center; }
+.nm-pdf-scroll {
+  overflow: auto; max-height: 72vh; min-height: 320px;
+  padding: 16px; background: var(--muted-bg);
+  display: flex; justify-content: center;
+}
+.nm-pdf-scroll:fullscreen { max-height: none; border-radius: 0; }
+.nm-pdf-page {
+  position: relative; align-self: flex-start;
+  background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+.nm-pdf-page canvas { display: block; }
+.nm-pdf-error { padding: 20px; }
+
+/* pdf.js text layer, flattened from pdfjs-dist/web/pdf_viewer.css; the
+   library sets --min-font-size and (via us) --total-scale-factor inline. */
+.textLayer {
+  position: absolute; text-align: initial; inset: 0;
+  overflow: clip; opacity: 1; line-height: 1;
+  letter-spacing: normal; word-spacing: normal;
+  text-size-adjust: none; forced-color-adjust: none;
+  transform-origin: 0 0; z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor, 1) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent; position: absolute; white-space: pre;
+  cursor: text; transform-origin: 0% 0%; user-select: text;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span[role="img"] { user-select: none; cursor: default; }
+.textLayer ::selection { background: color-mix(in srgb, AccentColor, transparent 50%); color: transparent; }
+.textLayer br::selection { background: transparent; }
+
+/* ---------- focus view: material beside the writing ---------- */
+.nm-study { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.nm-study--split { grid-template-columns: minmax(240px, var(--split, 55%)) 12px minmax(300px, 1fr); }
+.nm-study--material .nm-study-write,
+.nm-study--material .nm-study-divider { display: none; }
+.nm-study--write .nm-study-material,
+.nm-study--write .nm-study-divider { display: none; }
+.nm-study-material { min-width: 0; }
+.nm-study-write { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.nm-study-write .nm-writer { flex: 1 1 auto; display: flex; flex-direction: column; }
+.nm-study-write .nm-writer .nm-note-body { flex: 1 1 auto; min-height: 380px; }
+.nm-study-divider { cursor: col-resize; position: relative; align-self: stretch; touch-action: none; }
+.nm-study-divider::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
+  transform: translateX(-50%); border-radius: 2px; background: var(--rule);
+  transition: background-color 0.15s ease;
+}
+.nm-study-divider:hover::after, .nm-study-divider.is-dragging::after { background: var(--ink-muted); }
+.nm-study-focusbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.nm-study-hint { margin: 0 0 0 auto; }
+.nm-study-details { margin-left: auto; }
+.nm-study-empty {
+  display: grid; place-items: center; gap: 10px;
+  min-height: 220px; padding: 32px 18px;
+  border: 1px dashed var(--rule); border-radius: var(--radius-card);
+  color: var(--ink-muted); font-size: 0.85rem; text-align: center;
+}
+.nm-study-empty i { font-size: 1.4rem; }
+.nm-study-tabs { display: none; }
+.nm-study-resume { display: none; }
+
+/* ---------- study marks, excerpts and pdf highlights ---------- */
+.nm-note-marks { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.nm-note-marks .nm-chip { cursor: pointer; border: 1px solid var(--rule); background: var(--card); }
+.nm-note-marks .nm-chip:hover { border-color: var(--ink-muted); }
+.nm-excerpts {
+  margin-top: 14px; padding: 12px 14px;
+  border: 1px solid var(--rule); border-radius: var(--radius-card); background: var(--card);
+}
+.nm-excerpts .nm-card-hd { display: flex; align-items: baseline; gap: 8px; }
+.nm-excerpts-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.nm-excerpt { border-left: 3px solid var(--mark-amber); padding: 2px 0 2px 10px; }
+.nm-excerpt-quote { margin: 0 0 6px; font-size: 0.86rem; line-height: 1.5; }
+.nm-excerpt-actions { display: flex; align-items: center; gap: 6px; }
+.nm-pdf-mark { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.nm-pdf-mark > span {
+  position: absolute;
+  background: color-mix(in srgb, var(--mk) 32%, transparent);
+  border-radius: 2px;
+}
+.nm-pdf-highlightbtn {
+  position: absolute; transform: translate(-50%, -115%);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 0; border-radius: 999px;
+  background: var(--ink); color: var(--paper);
+  font-size: 0.76rem; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(10, 14, 12, 0.25);
+  z-index: 2;
+}
+.nm-pdf-highlightbtn:hover { background: color-mix(in srgb, var(--ink) 88%, transparent); }
+
+/* ---------- review page ---------- */
+.nm-review-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.nm-review-progress .nm-prog { flex: 1 1 auto; }
+.nm-review-progress .nm-meta { white-space: nowrap; }
+.nm-reviewcard {
+  padding: 22px; border: 1px solid var(--rule); border-radius: var(--radius-card);
+  background: var(--card); display: flex; flex-direction: column; gap: 12px;
+  min-height: 260px;
+}
+.nm-reviewcard-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nm-reviewcard-front {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 600;
+  line-height: 1.35; margin: 8px 0 0;
+}
+.nm-reviewcard-back {
+  margin: 4px 0 0; padding-top: 12px; border-top: 1px dashed var(--rule);
+  font-size: 1rem; line-height: 1.6; white-space: pre-wrap;
+}
+.nm-reviewcard-flip { align-self: flex-start; }
+.nm-reviewcard .nm-help { margin-top: auto; }
+.nm-review-grades { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.nm-review-grades .nm-btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
+.nm-review-hint { margin-top: 8px; }
+
+/* ---------- study timer, dashboard and continue card ---------- */
+.nm-studytimer { display: inline-flex; align-items: center; gap: 6px; }
+.nm-studytimer.is-live {
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--rule); border-radius: 999px; background: var(--card);
+}
+.nm-studytimer-clock { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.nm-dash-stats { display: flex; gap: 12px; margin-bottom: 16px; }
+.nm-dash-stat {
+  flex: 1 1 0; display: flex; flex-direction: column; gap: 2px;
+  padding: 12px 14px; border: 1px solid var(--rule);
+  border-radius: var(--radius-card); background: var(--card);
+}
+.nm-dash-statnum { font-size: 1.5rem; font-weight: 600; }
+.nm-dash-list { display: flex; flex-direction: column; gap: 14px; }
+.nm-dash-rowhd { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.nm-dash-name {
+  font-weight: 600; flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nm-continue {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; margin-bottom: 16px;
+  border: 1px solid var(--rule); border-left: 3px solid var(--mark-amber);
+  border-radius: var(--radius-card); background: var(--card);
+}
+.nm-continue-icon {
+  width: 42px; height: 42px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 12px; background: var(--mark-amber-soft); color: var(--mark-amber);
+  font-size: 1.05rem;
+}
+.nm-continue-bd { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.nm-continue-title {
+  font-family: var(--font-display); font-size: 1rem; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (max-width: 620px) {
+  .nm-continue { flex-wrap: wrap; }
+  .nm-continue .nm-btn { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 900px) {
+  .nm-study-tabs { display: flex; margin-bottom: 12px; }
+  .nm-study--mobile { display: block; }
+  .nm-study--mobile .nm-study-material,
+  .nm-study--mobile .nm-study-write { display: none; }
+  .nm-study--mobile.nm-study--tab-material .nm-study-material { display: block; }
+  .nm-study--mobile.nm-study--tab-notes .nm-study-write { display: flex; }
+  .nm-study--mobile .nm-study-divider { display: none; }
+  .nm-study-resume {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; margin-bottom: 12px; padding: 8px 10px;
+    border: 1px solid var(--rule); border-radius: 12px;
+    background: var(--card); color: var(--ink); text-align: left; cursor: pointer;
+  }
+  .nm-study-resume-thumb { width: 64px; height: 36px; object-fit: cover; border-radius: 8px; flex: 0 0 auto; }
+  .nm-study-resume-icon {
+    width: 36px; height: 36px; flex: 0 0 auto;
+    display: grid; place-items: center;
+    border-radius: 8px;
+    background: var(--mk-soft, var(--muted-bg)); color: var(--mk, var(--ink-muted));
+  }
+  .nm-study-resume-title {
+    flex: 1 1 auto; min-width: 0;
+    font-size: 0.84rem; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .nm-study-resume-play { color: var(--ink-muted); }
+}
 
 .nm-writer {
   border: 1px solid var(--rule);

@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-NotificationGroup = Literal["overdue", "due", "sessions", "assigned", "exams", "notes"]
+NotificationGroup = Literal["overdue", "due", "sessions", "assigned", "exams", "notes", "review"]
 NotificationTone = Literal["danger", "today", "muted"]
 
 

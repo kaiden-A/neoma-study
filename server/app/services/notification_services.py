@@ -9,10 +9,21 @@ events and notes on every read, keyed by a stable id that encodes the condition
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
-from ..models import Event, Group, GroupMember, Note, NoteScope, NotificationState, Task, TaskStatus, User
+from ..models import (
+    Event,
+    Flashcard,
+    Group,
+    GroupMember,
+    Note,
+    NoteScope,
+    NotificationState,
+    Task,
+    TaskStatus,
+    User,
+)
 from ..schemas.notifications import NotificationOut
 from ..services import settings_services
 from ..utils import to_ms
@@ -27,6 +38,7 @@ GROUP_LABELS = {
     "assigned": "Assigned to you",
     "exams": "Exams",
     "notes": "Shared with you",
+    "review": "Cards to review",
 }
 
 GROUP_ICONS = {
@@ -36,9 +48,10 @@ GROUP_ICONS = {
     "assigned": "fa-user-check",
     "exams": "fa-graduation-cap",
     "notes": "fa-note-sticky",
+    "review": "fa-clone",
 }
 
-PRIORITIES = {"overdue": 0, "due": 1, "sessions": 1, "assigned": 2, "exams": 2, "notes": 4}
+PRIORITIES = {"overdue": 0, "due": 1, "sessions": 1, "assigned": 2, "exams": 2, "review": 3, "notes": 4}
 
 
 def _visible_group_ids(db: DbSession, user: User) -> list[uuid.UUID]:
@@ -222,6 +235,31 @@ def derive(db: DbSession, user: User, *, now: datetime | None = None) -> list[No
                 body=f"{_user_name(db, note.created_by)} shared a note{suffix}",
                 at=note.created_at,
                 route=f"/groups/{note.group_id}?tab=notes",
+            )
+
+    # Review queue: one reminder while any card is due.
+    if kinds.review:
+        due_cards = (
+            db.scalar(
+                select(func.count())
+                .select_from(Flashcard)
+                .where(
+                    Flashcard.owner_id == user.id,
+                    Flashcard.suspended.is_(False),
+                    Flashcard.due_at <= moment,
+                )
+            )
+            or 0
+        )
+        if due_cards:
+            add(
+                key=f"review_due:{user.id}",
+                group="review",
+                title=f"{due_cards} card{'s' if due_cards != 1 else ''} ready to review",
+                body="A few minutes of recall keeps this material fresh.",
+                at=moment,
+                route="/review",
+                tone="today",
             )
 
     now_ms = to_ms(moment) or 0

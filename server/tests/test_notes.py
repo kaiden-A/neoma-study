@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
 from app.models import FileObject
-from app.services import reminder_services
+from app.services import file_services, reminder_services
 
 settings = get_settings()
 
@@ -298,11 +298,13 @@ def test_share_to_group_copies_text_and_file(
     assert personal["scope"] == "personal"
     assert personal["fileId"] == upload["id"]
     # The share copied the object instead of pointing at the personal file.
-    assert storage.copies == [(f"users/{owner.id}/{upload['id']}", f"groups/{group['id']}/{body['fileId']}")]
+    assert storage.copies == [
+        (f"users/{owner.id}/{upload['id']}.jpg", f"groups/{group['id']}/{body['fileId']}.jpg")
+    ]
 
     # Deleting the personal note leaves the shared copy alone.
     assert client.delete(f"/api/notes/{note['id']}").status_code == 204
-    assert storage.deleted == [f"users/{owner.id}/{upload['id']}"]
+    assert storage.deleted == [f"users/{owner.id}/{upload['id']}.jpg"]
 
 
 def test_share_can_leave_the_file_behind(
@@ -417,7 +419,7 @@ def test_deleting_a_group_note_removes_its_group_file(
     ).json()
 
     assert client.delete(f"/api/notes/{note['id']}").status_code == 204
-    assert storage.deleted == [f"groups/{group['id']}/{upload['id']}"]
+    assert storage.deleted == [f"groups/{group['id']}/{upload['id']}.pdf"]
 
 
 def test_group_notes_and_request_answer_flow(client: TestClient, sign_in, make_user, db: DbSession) -> None:
@@ -491,3 +493,157 @@ def test_bootstrap_includes_notes(client: TestClient, sign_in, make_user, db: Db
     body = client.get("/api/bootstrap").json()
 
     assert [item["id"] for item in body["notes"]] == [note["id"]]
+
+
+def test_note_study_round_trip(client: TestClient, sign_in, make_user, db: DbSession) -> None:
+    sign_in(make_user(db))
+    note = _note(client)
+    assert note["study"] == {"position": {"page": 1, "scroll": 0}, "highlights": [], "timestamps": []}
+
+    study = {
+        "position": {"page": 12, "scroll": 340.5},
+        "highlights": [
+            {
+                "id": "h1",
+                "page": 12,
+                "rects": [[0.1, 0.2, 0.3, 0.03]],
+                "quote": "Entropy never decreases.",
+                "color": "amber",
+                "createdAt": 1750000000000,
+                "tag": None,
+            }
+        ],
+        "timestamps": [42.0],
+    }
+    patched = client.patch(f"/api/notes/{note['id']}", json={"study": study})
+
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["study"] == study
+    assert client.get(f"/api/notes/{note['id']}").json()["study"] == study
+    assert client.get("/api/bootstrap").json()["notes"][0]["study"] == study
+
+    bad = client.patch(f"/api/notes/{note['id']}", json={"study": {"position": {"page": 0}}})
+    assert bad.status_code == 422
+
+
+def test_object_keys_keep_the_extension(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    sign_in(make_user(db))
+
+    presign = client.post(
+        "/api/files/presign",
+        json={
+            "name": "Lecture 1.pptx",
+            "contentType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "size": 10,
+            "thumb": True,
+        },
+    )
+
+    assert presign.status_code == 201, presign.text
+    main_key, thumb_key = storage.uploads
+    assert main_key.endswith(".pptx")
+    assert thumb_key == f"{main_key}-thumb"
+
+
+def test_share_copy_keeps_the_extension(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    sign_in(owner)
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    upload = client.post(
+        "/api/files",
+        files={
+            "file": (
+                "Week 3.docx",
+                io.BytesIO(b"doc"),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    ).json()
+    note = _note(client, type="note", title="Week 3", fileId=upload["id"])
+
+    shared = client.post(f"/api/notes/{note['id']}/share", json={"groupId": group["id"]})
+
+    assert shared.status_code == 201, shared.text
+    _, dest = storage.copies[0]
+    assert dest.endswith(".docx")
+
+
+def test_file_text_returns_text(client: TestClient, sign_in, make_user, db: DbSession, storage) -> None:
+    sign_in(make_user(db))
+    body = "line one\nline two"
+    upload = client.post(
+        "/api/files", files={"file": ("note.txt", io.BytesIO(body.encode()), "text/plain")}
+    ).json()
+
+    response = client.get(f"/api/files/{upload['id']}/text")
+
+    assert response.status_code == 200
+    assert response.json() == {"text": body, "truncated": False}
+
+
+def test_file_text_truncates_at_the_cap(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    sign_in(make_user(db))
+    big = b"x" * (file_services.MAX_TEXT_BYTES + 100)
+    upload = client.post(
+        "/api/files", files={"file": ("big.txt", io.BytesIO(big), "text/plain")}
+    ).json()
+
+    body = client.get(f"/api/files/{upload['id']}/text").json()
+
+    assert body["truncated"] is True
+    assert len(body["text"]) == file_services.MAX_TEXT_BYTES
+
+
+def test_file_text_rejects_binary(client: TestClient, sign_in, make_user, db: DbSession, storage) -> None:
+    sign_in(make_user(db))
+    upload = client.post(
+        "/api/files",
+        files={
+            "file": (
+                "deck.pptx",
+                io.BytesIO(b"PK"),
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        },
+    ).json()
+
+    response = client.get(f"/api/files/{upload['id']}/text")
+
+    assert response.status_code == 422
+    assert "no text" in response.json()["error"]
+
+
+def test_file_text_is_group_member_scoped(
+    client: TestClient, sign_in, make_user, db: DbSession, storage
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    member = make_user(db, email="maya@example.com")
+    outsider = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    group = client.post(
+        "/api/groups",
+        json={"kind": "study", "name": "Finals crew", "subject": "", "color": "violet", "description": ""},
+    ).json()
+    client.post(f"/api/groups/{group['id']}/invite", json={"email": "maya@example.com"})
+    upload = client.post(
+        "/api/files",
+        files={"file": ("notes.txt", io.BytesIO(b"shared text"), "text/plain")},
+        data={"groupId": group["id"]},
+    ).json()
+    client.post("/api/auth/logout")
+
+    sign_in(member)
+    assert client.get(f"/api/files/{upload['id']}/text").json()["text"] == "shared text"
+
+    client.post("/api/auth/logout")
+    sign_in(outsider)
+    assert client.get(f"/api/files/{upload['id']}/text").status_code == 404

@@ -26,6 +26,7 @@ const KIND_ROWS: { key: keyof NotificationKinds; label: string; help: string }[]
   { key: "sessions", label: "Study sessions", help: "Group study nights, a day before and an hour before." },
   { key: "exams", label: "Exams", help: "Countdown at 7, 3, 2, 1 and 0 days out." },
   { key: "notes", label: "Shared notes", help: "New notes posted in your groups." },
+  { key: "review", label: "Cards to review", help: "When spaced-repetition cards are due." },
 ];
 
 const MCP_TOOLS = [
@@ -356,6 +357,43 @@ export default function SettingsPage() {
               Desktop alerts fire while this tab is open. Emails are sent as a daily digest; every one has an
               unsubscribe link.
             </p>
+          </div>
+        </section>
+
+        <section className="nm-card">
+          <div className="nm-card-hd">
+            <h2 className="nm-card-title">Files &amp; links</h2>
+          </div>
+          <div className="nm-card-bd">
+            <div className="nm-togglelist">
+              <label className="nm-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.linkEmbeds}
+                  onChange={(event) => void patchSettings({ linkEmbeds: event.target.checked }, true)}
+                />
+                <span className="nm-toggle-bd">
+                  <span className="nm-toggle-label">Play video links inside Neoma</span>
+                  <span className="nm-toggle-help">
+                    YouTube and Vimeo links get a built-in player; YouTube is contacted only when you press play.
+                  </span>
+                </span>
+              </label>
+              <label className="nm-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.officePreview}
+                  onChange={(event) => void patchSettings({ officePreview: event.target.checked }, true)}
+                />
+                <span className="nm-toggle-bd">
+                  <span className="nm-toggle-label">Preview Office files inside Neoma</span>
+                  <span className="nm-toggle-help">
+                    Decks and documents render through Microsoft&apos;s viewer, which receives a temporary file link.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <p className="nm-help">Images, PDFs and text files preview on their own.</p>
           </div>
         </section>
 

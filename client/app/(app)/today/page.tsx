@@ -12,6 +12,7 @@ import { Avatar, Dial, EmptyState, MarkerChip, Progress } from "@/components/ui/
 import { addDays, daysUntil, fmtDay, fmtDayLong, fmtMonthYear, fmtRelative, fmtTime, isSameDay, monthGrid, startOfDay } from "@/lib/dates";
 import { eventType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
+import { formatClock } from "@/lib/study";
 import { useNow } from "@/lib/useNow";
 import type { Task } from "@/lib/types";
 
@@ -80,6 +81,8 @@ export default function TodayPage() {
         .slice(0, 8);
 
   const cells = monthGrid(anchor);
+  const continued = store.study?.continueStudy ?? null;
+  const streak = store.study?.streakDays ?? 0;
 
   return (
     <div className="nm-page">
@@ -107,6 +110,12 @@ export default function TodayPage() {
         <p className="nm-meta">
           <span className="nm-mono">{dueThisWeek} due this week</span> ·{" "}
           <span className="nm-mono">{openTasks} open</span>
+          {streak > 0 ? (
+            <>
+              {" · "}
+              <span className="nm-mono">{streak}-day study streak</span>
+            </>
+          ) : null}
           {overdue > 0 ? (
             <>
               {" · "}
@@ -118,6 +127,31 @@ export default function TodayPage() {
           ) : null}
         </p>
       </div>
+
+      {continued ? (
+        <div className="nm-continue">
+          <span className="nm-continue-icon">
+            <i className="fa-solid fa-book-open-reader" aria-hidden="true" />
+          </span>
+          <div className="nm-continue-bd">
+            <span className="nm-eyebrow">Continue studying</span>
+            <span className="nm-continue-title">{continued.title}</span>
+            <span className="nm-meta">
+              {store.subjectById(continued.subjectId ?? "")?.name ?? "No subject"} ·{" "}
+              {continued.videoSeconds !== null
+                ? `resume at ${formatClock(continued.videoSeconds)}`
+                : continued.page > 1
+                  ? `page ${continued.page}`
+                  : "from the start"}{" "}
+              · last studied {fmtRelative(continued.lastAt)}
+            </span>
+          </div>
+          <Link className="nm-btn nm-btn--primary" href={`/vault/${continued.noteId}`}>
+            <i className="fa-solid fa-play" aria-hidden="true" />
+            Resume
+          </Link>
+        </div>
+      ) : null}
 
       <div className="nm-home-panel">
         <div className="nm-minical">

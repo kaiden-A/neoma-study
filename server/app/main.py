@@ -17,14 +17,17 @@ from .routers import (
     data_router,
     events_router,
     files_router,
+    flashcards_router,
     google_router,
     groups_router,
     health_router,
     invites_router,
+    links_router,
     maintenance_router,
     notes_router,
     notifications_router,
     settings_router,
+    study_router,
     subjects_router,
     tasks_router,
 )
@@ -110,6 +113,9 @@ app.include_router(groups_router.router)
 app.include_router(invites_router.router)
 app.include_router(tasks_router.router)
 app.include_router(notes_router.router)
+app.include_router(links_router.router)
+app.include_router(flashcards_router.router)
+app.include_router(study_router.router)
 app.include_router(subjects_router.router)
 app.include_router(files_router.router)
 app.include_router(events_router.router)

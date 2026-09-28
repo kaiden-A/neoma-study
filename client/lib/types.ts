@@ -106,6 +106,28 @@ export interface RequestState {
   answerNoteId: string | null;
 }
 
+export interface StudyPosition {
+  page: number;
+  scroll: number;
+}
+
+export interface StudyHighlight {
+  id: string;
+  page: number;
+  /** Normalized [x, y, width, height] rects, relative to the page box. */
+  rects: number[][];
+  quote: string;
+  color: string;
+  createdAt: number;
+  tag?: string | null;
+}
+
+export interface NoteStudy {
+  position: StudyPosition;
+  highlights: StudyHighlight[];
+  timestamps: number[];
+}
+
 export interface Note {
   id: string;
   scope: NoteScope;
@@ -122,6 +144,8 @@ export interface Note {
   fileSize: number | null;
   pinned: boolean;
   tags: string[];
+  study: NoteStudy;
+  matchSnippet?: string | null;
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
@@ -151,7 +175,7 @@ export interface CalendarEvent {
 
 export interface NotificationItem {
   id: string;
-  group: "overdue" | "due" | "sessions" | "assigned" | "exams" | "notes";
+  group: "overdue" | "due" | "sessions" | "assigned" | "exams" | "notes" | "review";
   title: string;
   body: string;
   tone: "danger" | "today" | "muted";
@@ -169,6 +193,7 @@ export interface NotificationKinds {
   sessions: boolean;
   exams: boolean;
   notes: boolean;
+  review: boolean;
 }
 
 export interface GoogleSettings {
@@ -188,6 +213,8 @@ export interface UserSettings {
   theme: "light" | "dark";
   leadTimeHours: number;
   browserNotifications: boolean;
+  linkEmbeds: boolean;
+  officePreview: boolean;
   kinds: NotificationKinds;
   google: GoogleSettings;
   elpis: ElpisSettings;
@@ -225,6 +252,8 @@ export interface Bootstrap {
   notes?: Note[];
   events?: CalendarEvent[];
   notifications?: NotificationItem[];
+  flashcards?: Flashcard[];
+  study?: StudyOverview;
 }
 
 export interface FileOut {
@@ -241,6 +270,97 @@ export interface FilePresign {
   size: number;
   uploadUrl: string;
   thumbUploadUrl: string | null;
+}
+
+export interface LinkPreview {
+  title: string | null;
+  author: string | null;
+  thumbnailUrl: string | null;
+}
+
+export interface FileText {
+  text: string;
+  truncated: boolean;
+}
+
+export type FlashcardGrade = "again" | "hard" | "good" | "easy";
+
+export interface Flashcard {
+  id: string;
+  noteId: string;
+  noteTitle: string | null;
+  front: string;
+  back: string;
+  sourceHighlightId: string | null;
+  dueAt: number;
+  intervalDays: number;
+  ease: number;
+  reps: number;
+  lapses: number;
+  suspended: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FlashcardInput {
+  noteId: string;
+  front: string;
+  back?: string;
+  sourceHighlightId?: string | null;
+}
+
+export interface FlashcardPatchInput {
+  front?: string;
+  back?: string;
+  suspended?: boolean;
+}
+
+export interface StudySession {
+  id: string;
+  noteId: string | null;
+  noteTitle: string | null;
+  subjectId: string | null;
+  startedAt: number;
+  endedAt: number | null;
+  seconds: number;
+  source: "timer" | "manual";
+}
+
+export interface StudySessionInput {
+  noteId?: string | null;
+  subjectId?: string | null;
+  startedAt: number;
+  endedAt?: number | null;
+  seconds: number;
+  source?: "timer" | "manual";
+}
+
+export interface SubjectStudyStats {
+  subjectId: string;
+  name: string;
+  color: string;
+  notes: number;
+  files: number;
+  cardsDue: number;
+  minutesThisWeek: number;
+  lastStudiedAt: number | null;
+}
+
+export interface ContinueStudy {
+  noteId: string;
+  title: string;
+  subjectId: string | null;
+  type: NoteType;
+  page: number;
+  videoSeconds: number | null;
+  lastAt: number;
+}
+
+export interface StudyOverview {
+  streakDays: number;
+  minutesThisWeek: number;
+  subjects: SubjectStudyStats[];
+  continueStudy: ContinueStudy | null;
 }
 
 export interface NoteCreateInput {
@@ -263,6 +383,7 @@ export interface NotePatchInput {
   type?: NoteType;
   tags?: string[];
   pinned?: boolean;
+  study?: NoteStudy;
 }
 
 export interface GroupNoteInput {

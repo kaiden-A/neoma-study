@@ -166,6 +166,12 @@ class FakeStorage(Storage):
         self.uploads.append(key)
         return f"https://r2.test/{key}?put=1"
 
+    def get_bytes(self, key: str, max_bytes: int) -> bytes | None:
+        data = self.objects.get(key)
+        if data is None:
+            return None
+        return data[:max_bytes]
+
     def head(self, key: str) -> int | None:
         data = self.objects.get(key)
         return len(data) if data is not None else None

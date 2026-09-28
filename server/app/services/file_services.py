@@ -7,6 +7,7 @@ with their own keys, so deleting either copy never affects the other.
 """
 
 import uuid
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -17,6 +18,25 @@ from .errors import InvalidError, NotFoundError
 
 MISSING_FILE = "That file is gone."
 NOT_YOUR_GROUP_FILE = "That file is gone."
+
+TEXT_CONTENT_TYPES = ("text/", "application/json")
+MAX_TEXT_BYTES = 256 * 1024
+
+
+def file_key(prefix: str, name: str) -> str:
+    """The object key, with a sanitized extension kept on the path.
+
+    Office/Google online viewers detect the file type from the URL path, so
+    `users/{id}/{file_id}.pptx` previews where an extensionless key does not.
+    Thumbs stay "{key}-thumb".
+    """
+    suffix = Path(name).suffix.lower().lstrip(".")
+    cleaned = "".join(char for char in suffix if char.isalnum())
+    return f"{prefix}.{cleaned[:12]}" if cleaned else prefix
+
+
+def is_text_file(content_type: str) -> bool:
+    return content_type.startswith(TEXT_CONTENT_TYPES)
 
 
 def require_visible_file(db: DbSession, user: User, file_id: uuid.UUID) -> FileObject:

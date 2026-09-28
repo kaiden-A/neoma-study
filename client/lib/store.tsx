@@ -17,15 +17,24 @@ import type {
   EventPatchInput,
   FileOut,
   FilePresign,
+  FileText,
+  Flashcard,
+  FlashcardGrade,
+  FlashcardInput,
+  FlashcardPatchInput,
   Group,
   GroupKind,
   GroupNoteInput,
+  LinkPreview,
   MemberUser,
   Note,
   NoteCreateInput,
   NotePatchInput,
   NotificationItem,
   PublicUser,
+  StudyOverview,
+  StudySession,
+  StudySessionInput,
   Subject,
   Task,
   TaskPriority,
@@ -111,6 +120,8 @@ interface StoreValue {
   notes: Note[];
   events: CalendarEvent[];
   notifications: NotificationItem[];
+  flashcards: Flashcard[];
+  study: StudyOverview | null;
   refresh: () => Promise<void>;
   updateSettings: (patch: UserSettingsPatch) => Promise<UserSettings>;
   groupById: (id: string) => Group | null;
@@ -131,6 +142,14 @@ interface StoreValue {
   eventsOnDay: (day: number | Date) => CalendarItem[];
   personalNotes: () => Note[];
   notesForGroup: (groupId: string) => Note[];
+  dueCards: (now?: number) => Flashcard[];
+  cardsForNote: (noteId: string) => Flashcard[];
+  createCard: (input: FlashcardInput) => Promise<Flashcard>;
+  updateCard: (id: string, patch: FlashcardPatchInput) => Promise<Flashcard>;
+  deleteCard: (id: string) => Promise<void>;
+  gradeCard: (id: string, grade: FlashcardGrade) => Promise<Flashcard>;
+  saveSession: (input: StudySessionInput) => Promise<StudySession>;
+  searchNotes: (query: string) => Promise<Note[]>;
   unreadCount: () => number;
   createGroup: (input: GroupCreateInput) => Promise<Group>;
   updateGroup: (id: string, patch: GroupPatchInput) => Promise<Group>;
@@ -160,6 +179,8 @@ interface StoreValue {
   deleteSubject: (id: string, moveTo?: string | null) => Promise<void>;
   uploadFile: (file: Blob, name: string, thumb?: Blob | null, groupId?: string | null) => Promise<FileOut>;
   fileUrl: (id: string, thumb?: boolean) => Promise<string>;
+  fileText: (id: string) => Promise<FileText>;
+  linkPreview: (url: string) => Promise<LinkPreview>;
   createEvent: (input: EventCreateInput) => Promise<CalendarEvent>;
   updateEvent: (id: string, patch: EventPatchInput) => Promise<CalendarEvent>;
   deleteEvent: (id: string) => Promise<void>;
@@ -171,7 +192,7 @@ interface StoreValue {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-type LocalRow = Task | Note | CalendarEvent;
+type LocalRow = Task | Note | CalendarEvent | Flashcard;
 
 // Optimistic merges: a patch lands in local state before the server answers,
 // so a tick or a column move is instant. The server response replaces it.
@@ -218,6 +239,15 @@ function mergeNotePatch(note: Note, patch: NotePatchInput): Note {
   if (patch.type !== undefined) next.type = patch.type;
   if (patch.tags !== undefined) next.tags = patch.tags;
   if (patch.pinned !== undefined) next.pinned = patch.pinned;
+  if (patch.study !== undefined) next.study = patch.study;
+  return next;
+}
+
+function mergeCardPatch(card: Flashcard, patch: FlashcardPatchInput): Flashcard {
+  const next: Flashcard = { ...card, updatedAt: Date.now() };
+  if (patch.front !== undefined) next.front = patch.front;
+  if (patch.back !== undefined) next.back = patch.back;
+  if (patch.suspended !== undefined) next.suspended = patch.suspended;
   return next;
 }
 
@@ -256,6 +286,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [study, setStudy] = useState<StudyOverview | null>(null);
 
   const { toast } = useOverlays();
   // Optimistic bookkeeping: `stable` is the last server-confirmed row (the
@@ -297,6 +329,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setNotes(data.notes ?? []);
     setEvents(data.events ?? []);
     setNotifications(data.notifications ?? []);
+    setFlashcards(data.flashcards ?? []);
+    setStudy(data.study ?? null);
     booted.current = true;
     setStatus("ready");
   }, []);
@@ -405,6 +439,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setEvents((current) => {
       const exists = current.some((item) => item.id === event.id);
       return exists ? current.map((item) => (item.id === event.id ? event : item)) : [...current, event];
+    });
+  }, []);
+
+  const replaceCard = useCallback((card: Flashcard) => {
+    setFlashcards((current) => {
+      const exists = current.some((item) => item.id === card.id);
+      return exists ? current.map((item) => (item.id === card.id ? card : item)) : [card, ...current];
     });
   }, []);
 
@@ -534,6 +575,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const notesForGroup = (groupId: string) =>
       notes.filter((note) => note.scope === "group" && note.groupId === groupId);
 
+    const dueCards = (now?: number) =>
+      flashcards
+        .filter((card) => !card.suspended && card.dueAt <= (now ?? Date.now()))
+        .sort((a, b) => a.dueAt - b.dueAt);
+    const cardsForNote = (noteId: string) =>
+      flashcards.filter((card) => card.noteId === noteId).sort((a, b) => a.dueAt - b.dueAt);
+
     const unreadCount = () => notifications.filter((item) => !item.read).length;
 
     return {
@@ -546,6 +594,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       notes,
       events,
       notifications,
+      flashcards,
+      study,
       refresh,
       retry,
       status,
@@ -574,6 +624,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       eventsOnDay,
       personalNotes,
       notesForGroup,
+      dueCards,
+      cardsForNote,
+      saveSession: async (input) => {
+        const session = await apiPost<StudySession>("/api/study/sessions", input);
+        // The overview feeds the streak, dashboard and Continue card.
+        await refresh();
+        return session;
+      },
+      // Server-side search, so hits inside a file's extracted text and in
+      // group notes come back too.
+      searchNotes: async (query) => apiGet<Note[]>(`/api/notes?q=${encodeURIComponent(query)}`),
       unreadCount,
       createGroup: async (input) => {
         const group = await apiPost<Group>("/api/groups", input);
@@ -781,6 +842,70 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         replaceNote(note);
         return note;
       },
+      createCard: async (input) => {
+        const card = await apiPost<Flashcard>("/api/flashcards", input);
+        replaceCard(card);
+        return card;
+      },
+      updateCard: async (id, patch) => {
+        const current = flashcards.find((card) => card.id === id);
+        beginMutation(id, current);
+        setFlashcards((rows) => rows.map((card) => (card.id === id ? mergeCardPatch(card, patch) : card)));
+        try {
+          const card = await apiPatch<Flashcard>(`/api/flashcards/${id}`, patch);
+          if (finishMutation(id).last) {
+            stableRows.current.set(id, card);
+            replaceCard(card);
+          }
+          return card;
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceCard(rollback as Flashcard);
+          notifyFailure();
+          throw error;
+        }
+      },
+      deleteCard: async (id) => {
+        beginMutation(id, flashcards.find((card) => card.id === id));
+        setFlashcards((current) => current.filter((card) => card.id !== id));
+        try {
+          await apiDelete(`/api/flashcards/${id}`);
+          if (finishMutation(id).last) stableRows.current.delete(id);
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceCard(rollback as Flashcard);
+          notifyFailure();
+          throw error;
+        }
+      },
+      gradeCard: async (id, grade) => {
+        const current = flashcards.find((card) => card.id === id);
+        beginMutation(id, current);
+        if (current) {
+          // Optimistic: the card leaves the due queue; the server response
+          // replaces it with the real SM-2 numbers.
+          setFlashcards((rows) =>
+            rows.map((card) =>
+              card.id === id
+                ? { ...card, dueAt: Date.now() + 86_400_000, reps: card.reps + 1, updatedAt: Date.now() }
+                : card,
+            ),
+          );
+        }
+        try {
+          const card = await apiPost<Flashcard>(`/api/flashcards/${id}/grade`, { grade });
+          if (finishMutation(id).last) {
+            stableRows.current.set(id, card);
+            replaceCard(card);
+          }
+          return card;
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) replaceCard(rollback as Flashcard);
+          notifyFailure();
+          throw error;
+        }
+      },
       createSubject: async (name) => {
         const subject = await apiPost<Subject>("/api/subjects", { name });
         setSubjects((current) => [...current, subject]);
@@ -827,6 +952,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const result = await apiGet<{ url: string }>(`/api/files/${id}/url${thumb ? "?thumb=true" : ""}`);
         return result.url;
       },
+      fileText: async (id) => apiGet<FileText>(`/api/files/${id}/text`),
+      linkPreview: async (url) => apiPost<LinkPreview>("/api/links/preview", { url }),
       createEvent: async (input) => {
         const event = await apiPost<CalendarEvent>("/api/events", input);
         replaceEvent(event);
@@ -918,12 +1045,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     notes,
     events,
     notifications,
+    flashcards,
+    study,
     refresh,
     retry,
     replaceGroup,
     replaceTask,
     replaceNote,
     replaceEvent,
+    replaceCard,
     beginMutation,
     finishMutation,
     notifyFailure,

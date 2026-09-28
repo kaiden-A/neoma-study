@@ -16,7 +16,7 @@ from ..models import EmailLog, FileObject, Note, User
 from ..models import Session as SessionRow
 from ..services import email_services, file_services, notification_services, storage_services
 
-DIGEST_GROUPS = ("overdue", "due", "sessions", "assigned", "exams", "notes")
+DIGEST_GROUPS = ("overdue", "due", "sessions", "assigned", "exams", "notes", "review")
 ORPHAN_FILE_HOURS = 24
 
 

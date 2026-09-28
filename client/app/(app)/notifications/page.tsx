@@ -12,6 +12,7 @@ import { useNow } from "@/lib/useNow";
 const GROUPS = [
   { id: "overdue", label: "Overdue" },
   { id: "due", label: "Due soon" },
+  { id: "review", label: "Cards to review" },
   { id: "sessions", label: "Study sessions" },
   { id: "assigned", label: "Assigned to you" },
   { id: "exams", label: "Exams" },

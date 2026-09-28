@@ -4,6 +4,7 @@ import { useNoteActions } from "@/components/notes/NoteActions";
 import { NoteThumb } from "@/components/notes/NoteThumb";
 import { MarkerChip } from "@/components/ui/bits";
 import { fmtRelative, plain, truncate } from "@/lib/dates";
+import { parseVideoUrl } from "@/lib/links";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
@@ -23,7 +24,7 @@ export function NoteCard({
   const type = noteType(note.type);
   const group = note.groupId ? store.groupById(note.groupId) : null;
   const subject = note.subjectId ? store.subjectById(note.subjectId) : null;
-  const hasThumb = note.type !== "note" && note.type !== "link";
+  const hasThumb = (note.type !== "note" && note.type !== "link") || parseVideoUrl(note.url) !== null;
 
   return (
     <article className={`nm-notecard nm-mk-${type.marker}${note.pinned ? " is-pinned" : ""}`}>

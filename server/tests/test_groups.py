@@ -290,7 +290,7 @@ def test_deleting_a_group_purges_its_files(
     ).json()
 
     assert client.delete(f"/api/groups/{group['id']}").status_code == 204
-    assert storage.deleted == [f"groups/{group['id']}/{upload['id']}"]
+    assert storage.deleted == [f"groups/{group['id']}/{upload['id']}.jpg"]
 
 
 def test_service_adopts_placeholder_directly(db: DbSession, make_user) -> None:

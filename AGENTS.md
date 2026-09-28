@@ -88,11 +88,27 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   with a presigned URL from `POST /api/files/presign`; `POST /api/files/{id}/confirm`
   checks the object landed and records its real size. The API never sees the
   bytes, so the Vercel 4.5MB body cap does not apply. The R2 bucket needs a CORS
-  rule allowing `PUT` from the app origins. The legacy multipart `POST /api/files`
+  rule allowing `PUT` from the app origins **and `GET`/`HEAD`** — pdf.js and the
+  previews fetch presigned GETs from the browser, so a GET-less rule breaks the
+  PDF reader with a bare CORS console error. The legacy multipart `POST /api/files`
   still exists for tests; its three limits must stay ordered: client
   `MAX_FILE_BYTES` (15MB) ≤ server `MAX_UPLOAD_BYTES` (15MB) <
   `experimental.proxyClientMaxBodySize` in `next.config.ts` (20MB).
   Previews use short-lived presigned GETs resolved per render.
+- Previews: `lib/links.ts` recognises YouTube/Vimeo URLs and `LinkPreview.tsx`
+  owns link rendering (click-to-play facade; the provider is only contacted on
+  play; respects the `linkEmbeds` setting). `FilePreview.tsx` picks the pane:
+  `PdfViewer.tsx` (pdfjs-dist, the one client dependency, lazy + module worker)
+  for PDFs, the Office web viewer for decks/docs (`officePreview` setting),
+  `GET /api/files/{id}/text` for text, images inline, otherwise a card.
+- Study state lives in `notes.study` (JSONB, validated by
+  `schemas.notes.NoteStudy`): reader position, PDF highlight rects and video
+  resume marks. `PdfViewer` reports position and runs the selection→highlight
+  flow; the note page renders marks/excerpts and the flashcard card. Focus view
+  (material | split | write) is `lib/studyView.ts` + `.nm-study*` CSS.
+- Vault search is local for titles/body/tags; "Search inside files" asks the
+  server (`store.searchNotes` → `GET /api/notes?q=`) so hits inside extracted
+  file text (with "found in file · page N" snippets) and in group notes appear.
 
 ## Features and seams
 
@@ -104,11 +120,31 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   readable by members, attachments are copied on share (`Storage.copy`) so each
   copy is independent, and deleting a note/group purges its blobs. Access rules
   live in `services/file_services.py`. Sharing copies text into a group note.
-  `import_account`/`clear_demo` purge blobs before their rows; `purge_orphan_files`
-  (via `POST /api/maintenance/cleanup`) sweeps reserved rows that never became a
-  note; `scripts/reconcile_files.py` reconciles R2 against the `files` table.
-  `Storage.delete` is best-effort but logs failures - a rejected delete would
-  otherwise leave the blob in R2 with no recovery path.
+  Object keys carry a sanitized extension (`file_services.file_key`) so the
+  Office viewer can detect the type; `scripts/migrate_file_keys.py` backfills
+  old keys. `import_account`/`clear_demo` purge blobs before their rows;
+  `purge_orphan_files` (via `POST /api/maintenance/cleanup`) sweeps reserved rows
+  that never became a note; `scripts/reconcile_files.py` reconciles R2 against
+  the `files` table. `Storage.delete` is best-effort but logs failures - a
+  rejected delete would otherwise leave the blob in R2 with no recovery path.
+- File text: `services/extract_services.py` extracts on upload (pypdf /
+  python-docx / python-pptx / plain; ≤5MB, never fails the upload) into
+  `files.extracted_text` with `--- page N ---` markers; `GET /api/files/{id}/text`
+  serves the first 256KB; `GET /api/notes?q=` searches it (SQL ILIKE across
+  title/body/url/tags + file text) and returns a `matchSnippet`. Backfill with
+  `scripts/reindex_text.py`.
+- Links: `services/link_services.py` + `POST /api/links/preview` — a host
+  allowlist calls the provider's public oEmbed with the URL only as a parameter
+  (never fetched), 3s timeout, nulls on any failure. The client caches nothing;
+  `AddItemModal` uses it to name video links.
+- Study: `notes.study` JSONB holds position/highlights/video marks.
+  `services/flashcard_services.py` + `services/srs.py` (SM-2: Again/Hard/Good/Easy
+  update ease/interval; failed cards return in 10 minutes) drive `/review` and the
+  nav badge; `services/study_services.py` derives the dashboard, weekly minutes,
+  streak and "Continue studying" (`/api/study/*`, included in bootstrap). The
+  derived `review_due:{user}` notification feeds the digest too.
+- Settings: `linkEmbeds`/`officePreview` (and notification `kinds.review`) are in
+  the `users.settings` JSONB bag — validated in `schemas/settings.py`, no migration.
 - Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.
   Google Calendar sync lives in `services/google_services.py` (`google_accounts`,
   `events.google_event_id`, `tasks.google_event_id`/`google_account_id`): OAuth
@@ -131,7 +167,8 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
 - MCP: `app/mcp_server.py` + `app/mcp_tools.py`, mounted last; `GET /mcp` is 405.
   Every tool result ends with a `Now: ...` line (TimeContextMiddleware in
   `mcp_server.py`, driven by `DEFAULT_TIMEZONE`; tzdata is a dependency) and
-  `neoma.now` reports the clock on demand.
+  `neoma.now` reports the clock on demand. Flashcard tools: `list_due_cards`,
+  `create_card`, `grade_card`.
 
 ## Deploy notes
 

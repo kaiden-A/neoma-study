@@ -43,113 +43,77 @@ One stop centre for studying:
 
 ---
 
-## 2. Next: in-app previews (agreed plans, not yet built)
+## 2. In-app previews — DONE
 
 ### 2.1 YouTube / Vimeo embeds
 
-- [ ] `client/lib/links.ts` (new): `parseVideoUrl`, `videoEmbedUrl`,
-      `videoThumbUrl`. Recognise `youtube.com/watch?v=`, `youtu.be/`, `/shorts/`,
-      `/live/`, `/embed/`, `m.youtube.com`, `music.youtube.com`, `vimeo.com/{id}`,
-      `player.vimeo.com/video/{id}`; keep `t=`/`start=` (incl. `1h2m3s`) and
-      `list=`; validate IDs (`^[A-Za-z0-9_-]{11}$` for YouTube) before
-      embedding anything.
-- [ ] `client/components/notes/LinkPreview.tsx` (new): owns all link rendering.
-      Video → 16:9 facade (YouTube thumbnail + play button); on click swap in
-      `youtube-nocookie.com/embed/{id}?autoplay=1&rel=0[&start=]`; Vimeo →
-      `player.vimeo.com/video/{id}` (plain play button, no thumbnail). Bar keeps
-      the URL + **Open on YouTube / Vimeo**. Non-video → current link card.
-      Respects the `linkEmbeds` setting.
-- [ ] `NoteEditor.tsx`: replace the inline link card (old lines ~247-259) with
-      `<LinkPreview note={note} />`.
-- [ ] `NoteThumb.tsx`: video-link branch → thumbnail tile in rows/cards
-      (`loading="lazy"`, `onError` → existing icon tile). `NoteCard` uses the
-      tile instead of the generic strip for video links.
-- [ ] `AddItemModal.tsx`: blank title + video URL → `store.linkPreview(url)` and
-      use the real title; fallback `domainOf(url)`; button shows
-      "Fetching video title…".
-- [ ] Server: `app/services/link_services.py` + `app/routers/links_router.py`,
-      `POST /api/links/preview` (auth): host **allowlist** (youtube.com,
-      youtu.be, m.youtube.com, music.youtube.com, vimeo.com) → call the
-      provider's oEmbed endpoint with the original URL as a *parameter*
-      (SSRF-safe: never fetch the user URL), 3s timeout, `httpx` (already a
-      dependency). Returns `{title, author, thumbnailUrl}` or nulls.
-- [ ] Setting: `linkEmbeds: bool = True` in `UserSettings` + patch
-      (JSONB bag, **no migration**); `UserSettings` type in
-      `client/lib/types.ts`.
-- [ ] Tests: `server/tests/test_links.py` with httpx mocked — allowed host →
-      title; non-allowlisted host → nulls; provider error/timeout → nulls; auth
-      required. Settings default/patch in `tests/test_settings.py`.
-- [ ] Settings page: "Files & links" card with the `nm-toggle`
-      **"Play video links inside Neoma"** (help text: YouTube is contacted only
-      when you press play).
-- [ ] Verify: `ruff`, `pyright`, `pytest tests/test_links.py tests/test_settings.py -q`,
-      client `typecheck`/`lint`/`build`, headless-Chrome shots (facade → play →
-      iframe; vault row thumbnail; setting off → card).
+- [x] `client/lib/links.ts` — `parseVideoUrl`, `videoEmbedUrl`,
+      `videoThumbUrl`; every URL form + `t=`/`start=` (incl. `1h2m3s`) and
+      `list=` kept; IDs validated before embedding.
+- [x] `client/components/notes/LinkPreview.tsx` — 16:9 facade, click swaps in
+      `youtube-nocookie.com/embed/...` (Vimeo: plain tile); bar keeps the URL +
+      **Open on YouTube / Vimeo**; respects `linkEmbeds`.
+- [x] `NoteEditor.tsx` renders `<LinkPreview note={note} />`.
+- [x] `NoteThumb.tsx` / `NoteCard.tsx` — video thumbnail tiles with `onError`
+      fallback to the icon tile.
+- [x] `AddItemModal.tsx` — blank title + video URL fetches the real title
+      ("Fetching video title…"), `domainOf(url)` fallback.
+- [x] Server: `app/services/link_services.py` + `app/routers/links_router.py`,
+      `POST /api/links/preview` (auth, host allowlist, oEmbed URL as a
+      parameter, 3s timeout, nulls on failure).
+- [x] Setting: `linkEmbeds` in the JSONB bag; client type + Settings card
+      "Files & links" with the toggle.
+- [x] Tests: `tests/test_links.py` (allowed/non-allowlisted/error/auth) and
+      settings default + patch in `tests/test_settings.py`.
+- [x] Verified: ruff, pyright, pytest, typecheck/lint/build + headless shots
+      (facade → play → iframe, row thumbnail, setting off → card).
 
 ### 2.2 Office + text previews
 
-- [ ] Server key fix: `_file_key(prefix, name)` appends a sanitized extension
-      (`users/{id}/{file_id}.pptx`). Used in `presign_upload`
-      (`files_router.py`) and `_copy_file_to_group` (`note_services.py`).
-      Thumbs stay `{key}-thumb`. Reason: Office/Google viewers detect file type
-      from the URL path extension; today keys have none.
-- [ ] `server/scripts/migrate_file_keys.py` (dry-run default): for rows whose
-      key lacks an extension, server-side copy to the extensioned key, update
-      the row, delete the old key — so already-uploaded decks preview.
-- [ ] `GET /api/files/{id}/text` (auth): `file_services.require_visible_file`;
-      only `text/*` + `application/json`; ≤256 KB via new
-      `Storage.get_bytes(key, max_bytes)`; returns `{text, truncated}`.
-      (Chosen over client `fetch(presigned)` to avoid a bucket CORS GET rule
-      and keep ownership checks.)
-- [ ] `FilePreview.tsx`: Office branch → iframe
-      `https://view.officeapps.live.com/op/embed.aspx?src=<encoded presigned URL>`
-      with the existing bar (name/size/Open/Download) + **Reload preview**
-      (presigns live 10 min) + caption "Preview rendered by Microsoft".
-      Text branch → `<pre class="nm-preview-text">` from `fileText(id)`.
-      Office off → card + "Office previews are off in Settings".
-- [ ] Setting: `officePreview: bool = True` (same pattern as §2.1).
-- [ ] `NoteEditor.tsx`: `reloadFileUrl` callback for the Reload button.
-- [ ] Tests: key extension on presign + share copy (`test_notes.py`), `/text`
-      owner ok / non-member 404 / binary 400, setting default + patch.
-- [ ] Verify: office iframe renders a real pptx, text file previews, setting
-      off → card; both themes, both breakpoints.
+- [x] `file_services.file_key(prefix, name)` appends a sanitized extension;
+      used by presign, the legacy upload and share copies. Thumbs stay
+      `{key}-thumb`.
+- [x] `server/scripts/migrate_file_keys.py` (dry-run default).
+- [x] `GET /api/files/{id}/text` (auth, `require_visible_file`, text/* + JSON,
+      first 256 KB via `Storage.get_bytes`).
+- [x] `FilePreview.tsx`: Office iframe via `view.officeapps.live.com` + the
+      existing bar + **Reload preview** + "Preview rendered by Microsoft";
+      text files in `<pre class="nm-preview-text">`; Office off → card with
+      "Office previews are off in Settings".
+- [x] Setting: `officePreview` (same pattern as §2.1).
+- [x] `NoteEditor.tsx` passes `reloadFileUrl` for the Reload button.
+- [x] Tests: key extension on presign + share copy, `/text` owner/member/404/
+      binary/truncation, setting default + patch.
+- [x] Verified: text preview + Office branch in headless shots (Office iframe
+      needs a real pptx; the branch is covered by tests + code path).
 
 ### 2.3 PDF viewer (pdf.js)
 
-- [ ] Add `pdfjs-dist` — the **first client dependency**; import lazily only
-      when a PDF note opens so the vault stays light. Worker:
-      `new Worker(new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url))`
-      (verify under Turbopack; fallback: `?url` import).
-- [ ] `client/components/notes/PdfViewer.tsx` (new): page nav (prev/next,
-      "page N / M", jump input), zoom in/out/fit, **text layer** (selectable —
-      foundation for §3.2 highlights), fullscreen. Replace the `<iframe>` in
-      `FilePreview` for `application/pdf`.
-- [ ] Why: Android Chrome downloads iframes instead of rendering them; no page
-      memory or selection with the native viewer.
-- [ ] Page memory: `localStorage["neoma.study." + noteId]` → `{page, scroll}`;
-      move to the server when §3.2 lands (`notes.study` JSONB).
-- [ ] Keep the bar: Open file / Download unchanged.
+- [x] `pdfjs-dist` added (the first client dependency), lazily imported;
+      module worker from `pdfjs-dist/build/pdf.worker.min.mjs` (verified the
+      worker asset is emitted by Turbopack).
+- [x] `client/components/notes/PdfViewer.tsx`: page nav + jump, zoom/fit,
+      selectable text layer, fullscreen. Replaced the `<iframe>` for
+      `application/pdf`.
+- [x] Page memory lives in `notes.study` (server) — see §3.1; the viewer
+      reports position and restores it.
+- [x] Bar keeps Open file / Download.
 
 ### 2.4 Focus view (the left/right study layout)
 
-- [ ] `client/lib/studyView.ts` (new, `useSyncExternalStore` pattern like
-      `vaultView.ts`): mode (`split | material | write`) + split ratio,
-      persisted per user.
-- [ ] Desktop (≥1080px): `grid-template-columns: var(--split) 1fr` with a
-      **draggable divider** (pointer events, sensible min widths); `Ctrl+\`
-      cycles modes; `Esc` exits fullscreen material. In split mode the
-      Details/History sidebar collapses — reuse `NoteDetailsSheet` from the
-      chips row.
-- [ ] Right pane: title input, type/subject chips, textarea filling the
-      remaining height, word count; Save stays in the header (desktop) and the
-      bottom bar (mobile).
-- [ ] Mobile (<900px): segmented **Material / Notes** tabs; for video a
-      **sticky mini-player** while writing (tap → back to Material); for PDF a
-      "page N · resume" pill.
-- [ ] Material pane uses: `PdfViewer`, video embed (§2.1), Office iframe
-      (§2.2), image, text preview (§2.2), link card fallback.
-- [ ] Verify: 1280×900 + 390×844 headless shots; drag divider; mode persists;
-      page/video position survives reload.
+- [x] `client/lib/studyView.ts` (`useSyncExternalStore`): mode
+      (`split | material | write`) + split ratio, persisted.
+- [x] Desktop ≥1081px: `--split` grid with a draggable divider, `Ctrl+\`
+      cycles modes, `Esc` leaves full-width material; the Details/History
+      sidebar collapses into `NoteDetailsSheet` via the chips row.
+- [x] Right pane: title input, type/subject chips, textarea filling the
+      remaining height, word count; Save stays in header/bottom bar.
+- [x] Mobile <900px: Material / Notes tabs, sticky video mini-player (tap →
+      Material), PDF "page N · resume" pill.
+- [x] Material pane uses PdfViewer, video embed, Office iframe, image, text
+      preview and the link card fallback.
+- [x] Verified: 1280×900 + 390×844 headless shots; mode persists via
+      localStorage; page/video position survives reload (server `notes.study`).
 
 ---
 
@@ -157,57 +121,55 @@ One stop centre for studying:
 
 ### 3.1 Capture (make the note a study artefact)
 
-- [ ] YouTube timestamps: body convention `[mm:ss]` / `[hh:mm:ss]`; a **"Stamp
-      current time"** button inserts at the caret; clicking a timestamp seeks
-      the player (reload iframe with `start=`); timestamps render as chips in
-      the right pane when the note has a video.
-- [ ] PDF highlights: select text in the pdf.js text layer → floating
-      **Highlight** button → store in a new `notes.study` JSONB column
-      (Alembic migration, hand-reviewed):
-      `{position: {page, scroll}, highlights: [{id, page, rects, quote, color,
-      createdAt, tag?}], timestamps: []}`. Render highlights over the text
-      layer; excerpts list with "jump to page" and copy-into-note.
-- [ ] Page anchors: writing `[p. 12]` becomes a clickable jump.
+- [x] YouTube timestamps: `[mm:ss]` / `[hh:mm:ss]` convention, **"Stamp
+      current time"** inserts at the caret (YouTube clock via the iframe
+      postMessage channel), clicking a chip seeks the player, chips render in
+      the write pane.
+- [x] PDF highlights: select in the pdf.js text layer → floating **Highlight**
+      button → stored in `notes.study` JSONB (Alembic migration
+      `b7c4d1e8a220`, hand-reviewed):
+      `{position, highlights: [{id, page, rects, quote, color, createdAt,
+      tag?}], timestamps}`. Rendered over the text layer; excerpts list with
+      "jump to page", "copy into note" and "make card".
+- [x] Page anchors: `[p. 12]` in the body renders as a clickable jump chip on
+      PDF notes.
 
 ### 3.2 Recall (the step that makes studying stick)
 
-- [ ] Tables (Alembic): `flashcards` (id, owner_id, note_id, front, back,
-      source_highlight_id, due_at, interval_days, ease, reps, lapses,
-      suspended, created_at, updated_at) + `study_sessions` (see §3.3).
-- [ ] SM-2 scheduling (~40 lines): grades Again / Hard / Good / Easy update
-      ease + interval; `due_at` drives the queue.
-- [ ] `/review` page: flip card, grade buttons, keyboard 1–4, due count in the
-      nav badge. Card list per note; "Add card" from a highlight or selection.
-- [ ] Notifications: derived `review_due:{user}` in
-      `notification_services.py`; optional inclusion in the daily digest.
-- [ ] MCP tools: `list_due_cards`, `create_card`, `grade_card` (read tools
-      first, annotations per repo convention).
-- [ ] Tests: scheduling math, ownership, due filtering, MCP shapes.
+- [x] Tables (migration `c9d5e2f1b331`): `flashcards` + `study_sessions`.
+- [x] SM-2 scheduling (`services/srs.py`): Again / Hard / Good / Easy update
+      ease + interval; failed cards return in 10 minutes.
+- [x] `/review` page: flip card, grade buttons, keyboard 1–4, due count in the
+      nav badge (rail + phone tab bar). Card list per note + "Add card" from
+      the note or from a highlight.
+- [x] Notifications: derived `review_due:{user}`; the `review` group is in the
+      daily digest too.
+- [x] MCP tools: `list_due_cards`, `create_card`, `grade_card`.
+- [x] Tests: scheduling math, ownership, due filtering, MCP shapes.
 
 ### 3.3 Progress & habit
 
-- [ ] `study_sessions` table (id, user_id, note_id, subject_id, started_at,
-      ended_at, seconds, source: timer|manual).
-- [ ] Timer on the note page (start/pause/finish); auto-stop after idle;
-      writes a session row.
-- [ ] Subject dashboard: per subject — note/file counts, last studied, cards
-      due, minutes this week; entry point from the vault header.
-- [ ] Home (`/today`): **"Continue studying"** card → last note, page/timestamp
-      resume; streak from days with sessions or reviews.
-- [ ] Tests: session aggregation, dashboard numbers, streak boundaries.
+- [x] `study_sessions` table (migration `c9d5e2f1b331`).
+- [x] Timer on the note page (manual start/pause/finish); auto-finishes after
+      5 idle minutes; writes a session row.
+- [x] Subject dashboard: per subject note/file counts, last studied, cards due,
+      minutes this week; opened from the vault header.
+- [x] Home (`/today`): **"Continue studying"** card → last note with page /
+      timestamp resume; streak from days with sessions or reviews.
+- [x] Tests: session aggregation, dashboard numbers, streak boundaries.
 
 ### 3.4 Library depth (search)
 
-- [ ] Text extraction on upload (best-effort, never fails the upload): `pypdf`
-      (PDF, with page markers), `python-docx`, `python-pptx`, plain text → new
-      `files.extracted_text` + `extracted_at` columns.
-- [ ] `scripts/reindex_text.py` (dry-run default) for existing files.
-- [ ] Search: include file text with "found in file · page N" snippets; switch
-      `note_services.list_notes` from the Python filter to SQL (ILIKE now,
-      tsvector when volume justifies); include group notes in vault search.
+- [x] Text extraction on upload (best-effort, never fails the upload): pypdf
+      (with `--- page N ---` markers), python-docx, python-pptx, plain text →
+      `files.extracted_text` + `extracted_at` (migration `d1e6f3a2c447`).
+- [x] `scripts/reindex_text.py` (dry-run default).
+- [x] Search: SQL ILIKE over title/body/url/tags + file text with
+      "found in file · page N" snippets; group notes are included; the vault
+      gets a "Search inside files" run through `store.searchNotes`.
 - [ ] OCR for handwriting — later, separate project (tesseract or an API).
 
-### 3.5 AI — LibreChat inside Neoma
+### 3.5 AI — LibreChat inside Neoma (skipped this pass, per request)
 
 - [x] Findings (verified in LibreChat docs): they ship an **Agents API** —
       `POST /api/agents/v1/chat/completions` (OpenAI-compatible, API-key auth,
@@ -250,10 +212,10 @@ One stop centre for studying:
 
 - [ ] Cloud Run `--min-instances=1` removes the cold start outright (the
       loading UX already makes it tolerable).
-- [ ] No R2 CORS change needed for §2.2 (text goes through the API); Office
-      viewer fetches presigned URLs directly — watch the 10-min
-      `R2_SIGNED_URL_TTL_SECONDS` and use the Reload button.
-- [ ] Preview defaults to keep in mind: YouTube oEmbed is public but
+- [x] No R2 CORS change needed for §2.2 (text goes through the API); the
+      bucket's existing rule already allows `GET`/`HEAD`/`PUT` from the app
+      origins, which §2.3's pdf.js needs.
+- [x] Preview defaults to keep in mind: YouTube oEmbed is public but
       undocumented (3s timeout + fallback); Office preview ships files to
       Microsoft (setting exists); `pypdf`/`python-docx`/`python-pptx` are pure
       Python (no Docker weight).
@@ -263,9 +225,10 @@ One stop centre for studying:
 ## 5. Open decisions (confirm before/during the relevant phase)
 
 - [ ] LibreChat: public URL, API key, agent id, version (Agents API support).
-- [ ] `pdfjs-dist` adoption confirmed (first client dependency, lazy-loaded).
-- [ ] "Focus" naming for the split layout (avoid clashing with study *groups*).
-- [ ] Whether the timer is manual-start only or prompts on opening a note.
+- [x] `pdfjs-dist` adoption confirmed (first client dependency, lazy-loaded).
+- [x] "Focus" naming for the split layout (avoid clashing with study *groups*).
+- [x] Timer is manual-start only (`Start studying` on the note page; no
+      prompt on opening a note).
 
 ---
 

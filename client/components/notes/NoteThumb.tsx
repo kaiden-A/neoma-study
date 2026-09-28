@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { parseVideoUrl, videoThumbUrl } from "@/lib/links";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
@@ -9,9 +10,10 @@ import type { Note } from "@/lib/types";
 /** The file tile used by cards, rows and the group feed.
  *
  * Previews only exist for images (the browser compresses and uploads a JPEG
- * thumb at upload time). Pointing an <img> at a slide deck or PDF just shows
- * the alt text, so anything that is not an image gets the note type's icon on
- * a marker-tinted tile instead. */
+ * thumb at upload time) and video links (the provider's public thumbnail).
+ * Pointing an <img> at a slide deck or PDF just shows the alt text, so
+ * anything that is not an image gets the note type's icon on a marker-tinted
+ * tile instead. */
 export function NoteThumb({
   note,
   alt,
@@ -26,6 +28,8 @@ export function NoteThumb({
   const [failed, setFailed] = useState(false);
   const type = noteType(note.type);
   const isImage = Boolean(note.fileId && note.fileType?.startsWith("image/"));
+  const video = !isImage && note.type === "link" ? parseVideoUrl(note.url) : null;
+  const videoThumb = video ? videoThumbUrl(video) : null;
 
   useEffect(() => {
     let active = true;
@@ -41,6 +45,15 @@ export function NoteThumb({
       active = false;
     };
   }, [fileUrl, isImage, note.fileId]);
+
+  if (videoThumb && !failed) {
+    return (
+      <span className={`${className} nm-filetile nm-filetile--image`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={videoThumb} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+      </span>
+    );
+  }
 
   if (!isImage || failed) {
     return (

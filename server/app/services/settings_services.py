@@ -18,6 +18,7 @@ class NotificationKinds(BaseModel):
     sessions: bool = True
     exams: bool = True
     notes: bool = True
+    review: bool = True
 
 
 class GoogleSettings(BaseModel):
@@ -37,6 +38,10 @@ class UserSettings(BaseModel):
     theme: Literal["light", "dark"] = "light"
     leadTimeHours: int = 48
     browserNotifications: bool = False
+    # Preview preferences: play video links and render Office files inside
+    # Neoma. Both default on; turning them off leaves plain link/file cards.
+    linkEmbeds: bool = True
+    officePreview: bool = True
     kinds: NotificationKinds = Field(default_factory=NotificationKinds)
     google: GoogleSettings = Field(default_factory=GoogleSettings)
     elpis: ElpisSettings = Field(default_factory=ElpisSettings)
@@ -53,6 +58,8 @@ class UserSettingsPatch(BaseModel):
     theme: Literal["light", "dark"] | None = None
     leadTimeHours: int | None = None
     browserNotifications: bool | None = None
+    linkEmbeds: bool | None = None
+    officePreview: bool | None = None
     kinds: NotificationKinds | None = None
     elpis: ElpisSettings | None = None
     syncLog: list[str] | None = None

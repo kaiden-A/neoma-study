@@ -7,7 +7,7 @@ runs as the member the verifier resolved for the request.
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from mcp.server.mcpserver.exceptions import ToolError
@@ -19,8 +19,15 @@ from .models import EventType, TaskStatus
 from .schemas.events import EventCreate, EventOut, EventPatch
 from .schemas.groups import GroupOut
 from .schemas.notes import GroupNoteCreate, NoteCreate, NoteOut, NotePatch
+from .schemas.study import FlashcardCreate, FlashcardGrade, FlashcardOut
 from .schemas.tasks import TaskCreate, TaskOut, TaskPatch
-from .services import event_services, group_services, note_services, task_services
+from .services import (
+    event_services,
+    flashcard_services,
+    group_services,
+    note_services,
+    task_services,
+)
 from .services.errors import ServiceError
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
@@ -31,7 +38,10 @@ GroupId = Annotated[str, Field(description="The group's id.")]
 TaskId = Annotated[str, Field(description="The task's id.")]
 NoteId = Annotated[str, Field(description="The note's id.")]
 EventId = Annotated[str, Field(description="The event's id.")]
+CardId = Annotated[str, Field(description="The flashcard's id.")]
 Title = Annotated[str, Field(min_length=1, max_length=300, description="A short title.")]
+
+GRADES: tuple[FlashcardGrade, ...] = ("again", "hard", "good", "easy")
 
 
 def _run(action):
@@ -402,6 +412,50 @@ def update_note(
         if pinned is not None:
             patch.pinned = pinned
         return _run(lambda: note_services.update_note(db, user, _uuid(note_id, "note"), patch))
+
+
+@mcp.tool(annotations=READ_ONLY)
+def list_due_cards(
+    limit: Annotated[int, Field(ge=1, le=100, description="How many cards to return.")] = 20,
+) -> list[dict]:
+    """Flashcards whose spaced-repetition review is due, soonest first."""
+    with get_session() as db:
+        user = current_user(db)
+        cards = flashcard_services.list_cards(db, user, due_only=True, limit=limit)
+        return [{**card.model_dump(mode="json"), "dueAtIso": _iso(card.dueAt)} for card in cards]
+
+
+@mcp.tool(annotations=MUTATING)
+def create_card(
+    note_id: NoteId,
+    front: Annotated[str, Field(min_length=1, max_length=1000, description="The question or prompt.")],
+    back: Annotated[str, Field(max_length=2000, description="The answer.")] = "",
+) -> FlashcardOut:
+    """Create a flashcard on a note the member can see."""
+    with get_session() as db:
+        user = current_user(db)
+        return _run(
+            lambda: flashcard_services.create_card(
+                db, user, FlashcardCreate(noteId=note_id, front=front, back=back)
+            )
+        )
+
+
+@mcp.tool(annotations=MUTATING)
+def grade_card(
+    card_id: CardId,
+    grade: Annotated[str, Field(description="again, hard, good or easy.")],
+) -> FlashcardOut:
+    """Grade a review card; this updates its interval and due date."""
+    if grade not in GRADES:
+        raise ToolError("Grade must be again, hard, good or easy.")
+    with get_session() as db:
+        user = current_user(db)
+        return _run(
+            lambda: flashcard_services.grade_card(
+                db, user, _uuid(card_id, "card"), cast(FlashcardGrade, grade)
+            )
+        )
 
 
 @mcp.tool(annotations=READ_ONLY)

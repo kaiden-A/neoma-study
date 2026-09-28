@@ -13,6 +13,7 @@ from .google import GoogleAccount
 from .groups import EmailLog, Group, GroupLink, GroupMember, GroupTopic, NotificationState
 from .notes import FileObject, Note, Subject
 from .sessions import Session
+from .study import Flashcard, StudySession
 from .tasks import Task, TaskAssignee, TaskLink, TaskSubtask
 from .users import User, utcnow
 
@@ -21,6 +22,7 @@ __all__ = [
     "Event",
     "EventType",
     "FileObject",
+    "Flashcard",
     "GoogleAccount",
     "Group",
     "GroupKind",
@@ -33,6 +35,7 @@ __all__ = [
     "NoteType",
     "NotificationState",
     "Session",
+    "StudySession",
     "Subject",
     "Task",
     "TaskAssignee",

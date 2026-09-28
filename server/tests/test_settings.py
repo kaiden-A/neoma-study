@@ -53,6 +53,20 @@ def test_settings_reject_unknown_lead_time(client: TestClient, sign_in, make_use
     assert response.json() == {"error": "Pick a reminder window from the list."}
 
 
+def test_preview_settings_default_off_patch(client: TestClient, sign_in, make_user, db) -> None:
+    sign_in(make_user(db))
+
+    body = client.get("/api/settings").json()
+    assert body["linkEmbeds"] is True
+    assert body["officePreview"] is True
+
+    patched = client.patch("/api/settings", json={"linkEmbeds": False, "officePreview": False})
+    assert patched.status_code == 200
+    assert patched.json()["linkEmbeds"] is False
+    assert patched.json()["officePreview"] is False
+    assert client.get("/api/settings").json()["officePreview"] is False
+
+
 def test_profile_patch(client: TestClient, sign_in, make_user, db) -> None:
     user = make_user(db, name="Ada", email="ada@example.com")
     sign_in(user)

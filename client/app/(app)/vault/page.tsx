@@ -6,6 +6,7 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 import { AddItemModal } from "@/components/notes/AddItemModal";
 import { NoteCard } from "@/components/notes/NoteCard";
 import { NoteRow } from "@/components/notes/NoteRow";
+import { StudyDashboard } from "@/components/notes/StudyDashboard";
 import { EmptyState } from "@/components/ui/bits";
 import { Modal } from "@/components/ui/Modal";
 import { Menu } from "@/components/ui/Menu";
@@ -33,7 +34,10 @@ export default function VaultPage() {
   const [subjectId, setSubjectId] = useState<string>("all");
   const [filter, setFilter] = useState<FilterId>("all");
   const [query, setQuery] = useState("");
+  const [remote, setRemote] = useState<Note[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [dashboard, setDashboard] = useState(false);
   const [subjectModal, setSubjectModal] = useState<"new" | null>(null);
   const [subjectName, setSubjectName] = useState("");
   const [subjectMenu, setSubjectMenu] = useState<{ id: string; left: number; top: number } | null>(null);
@@ -48,7 +52,10 @@ export default function VaultPage() {
   const notes = store.personalNotes();
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return notes
+    // Server results (file text, group notes) replace the local list once the
+    // "Search inside files" run lands; the subject/type filters still apply.
+    const source = remote ?? notes;
+    return source
       .filter((note) => (subjectId === "all" ? true : note.subjectId === subjectId))
       .filter((note) => {
         if (filter === "notes") return note.type === "note";
@@ -57,7 +64,7 @@ export default function VaultPage() {
         return true;
       })
       .filter((note) => {
-        if (!needle) return true;
+        if (remote || !needle) return true;
         return (
           note.title.toLowerCase().includes(needle) ||
           note.body.toLowerCase().includes(needle) ||
@@ -68,7 +75,7 @@ export default function VaultPage() {
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
         return b.updatedAt - a.updatedAt;
       });
-  }, [notes, subjectId, filter, query]);
+  }, [notes, remote, subjectId, filter, query]);
 
   const counts = {
     all: notes.length,
@@ -82,6 +89,18 @@ export default function VaultPage() {
 
   function openNote(note: Note) {
     router.push(`/vault/${note.id}`);
+  }
+
+  async function searchInsideFiles() {
+    const needle = query.trim();
+    if (!needle) return;
+    setSearching(true);
+    try {
+      setRemote(await store.searchNotes(needle));
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not search files.", { kind: "danger" });
+    }
+    setSearching(false);
   }
 
   async function createSubject() {
@@ -119,6 +138,10 @@ export default function VaultPage() {
             Your study notes
           </h1>
           <div className="nm-head-actions">
+            <button type="button" className="nm-btn nm-btn--secondary" onClick={() => setDashboard(true)}>
+              <i className="fa-solid fa-chart-simple" aria-hidden="true" />
+              Dashboard
+            </button>
             <button type="button" className="nm-btn nm-btn--primary" onClick={() => setAdding(true)}>
               <i className="fa-solid fa-plus" aria-hidden="true" />
               Add
@@ -191,14 +214,43 @@ export default function VaultPage() {
                 placeholder="Search titles, notes and tags…"
                 aria-label="Search notes"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setRemote(null);
+                }}
               />
               {query ? (
-                <button type="button" className="nm-search-clear" aria-label="Clear search" onClick={() => setQuery("")}>
+                <button
+                  type="button"
+                  className="nm-search-clear"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setQuery("");
+                    setRemote(null);
+                  }}
+                >
                   <i className="fa-solid fa-xmark" aria-hidden="true" />
                 </button>
               ) : null}
             </div>
+            {query.trim() ? (
+              remote === null ? (
+                <button
+                  type="button"
+                  className="nm-btn nm-btn--secondary nm-btn--sm"
+                  disabled={searching}
+                  onClick={() => void searchInsideFiles()}
+                >
+                  <i className="fa-solid fa-magnifying-glass-plus" aria-hidden="true" />
+                  {searching ? "Searching…" : "Search inside files"}
+                </button>
+              ) : (
+                <button type="button" className="nm-btn nm-btn--ghost nm-btn--sm" onClick={() => setRemote(null)}>
+                  <i className="fa-solid fa-xmark" aria-hidden="true" />
+                  File results · clear
+                </button>
+              )
+            ) : null}
             <div className="nm-viewtoggle" role="group" aria-label="Layout">
               {(["list", "grid"] as VaultView[]).map((item) => (
                 <button
@@ -265,6 +317,7 @@ export default function VaultPage() {
                     onClick={() => {
                       setQuery("");
                       setFilter("all");
+                      setRemote(null);
                     }}
                   >
                     Clear search and filters
@@ -299,6 +352,8 @@ export default function VaultPage() {
           onCreated={(id) => router.push(`/vault/${id}`)}
         />
       ) : null}
+
+      {dashboard ? <StudyDashboard onClose={() => setDashboard(false)} /> : null}
 
       {subjectModal === "new" ? (
         <Modal

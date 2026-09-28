@@ -107,6 +107,30 @@ class Storage:
         except (BotoCoreError, ClientError) as exc:
             raise StorageError("Could not prepare that upload.") from exc
 
+    def get_bytes(self, key: str, max_bytes: int) -> bytes | None:
+        """The object's first `max_bytes`, or None when it was never uploaded.
+
+        Used for text previews: the API never streams a whole file it is not
+        going to show.
+        """
+        if not self.configured:
+            raise UnavailableError("File storage is not configured.")
+        try:
+            response = self.client().get_object(
+                Bucket=self.bucket, Key=key, Range=f"bytes=0-{max_bytes - 1}"
+            )
+        except ClientError as exc:
+            code = str((exc.response.get("Error") or {}).get("Code") or "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            if code == "InvalidRange":
+                # The object exists but is empty.
+                return b""
+            raise StorageError(UPLOAD_ERROR) from exc
+        except BotoCoreError as exc:
+            raise StorageError(UPLOAD_ERROR) from exc
+        return response["Body"].read()
+
     def head(self, key: str) -> int | None:
         """The stored object's size, or None when it was never uploaded."""
         if not self.configured:

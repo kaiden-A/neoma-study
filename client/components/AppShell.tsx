@@ -17,11 +17,13 @@ import { apiPost } from "@/lib/api-client";
 import { useStore } from "@/lib/store";
 import { applyTheme } from "@/lib/theme";
 import type { LogoutResponse } from "@/lib/types";
+import { useNow } from "@/lib/useNow";
 
 const NAV = [
   { href: "/today", label: "Home", icon: "fa-house" },
   { href: "/groups", label: "Groups", icon: "fa-users" },
   { href: "/vault", label: "Notes", icon: "fa-note-sticky" },
+  { href: "/review", label: "Review", icon: "fa-clone" },
   { href: "/calendar", label: "Calendar", icon: "fa-calendar-days" },
 ] as const;
 
@@ -30,11 +32,12 @@ const TABS = [...NAV, { href: "/settings", label: "Settings", icon: "fa-sliders"
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, settings, status, bootSlow, updateSettings, unreadCount } = useStore();
+  const { user, settings, status, bootSlow, updateSettings, unreadCount, dueCards } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const avatarRef = useRef<HTMLButtonElement>(null);
+  const now = useNow(60_000);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -68,6 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const planner = pathname === "/today" || pathname === "/calendar";
   const unread = unreadCount();
+  const due = dueCards(now).length;
   const bellLabel = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
 
   return (
@@ -94,6 +98,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <i className={`fa-solid ${item.icon}`} aria-hidden="true" />
                 <span>{item.label}</span>
+                {item.href === "/review" && due > 0 ? (
+                  <span className="nm-badge" aria-label={`${due} cards due`}>
+                    {due > 9 ? "9+" : due}
+                  </span>
+                ) : null}
               </Link>
             ))}
           </nav>
@@ -183,6 +192,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <i className={`fa-solid ${item.icon}`} aria-hidden="true" />
             <span>{item.label}</span>
+            {item.href === "/review" && due > 0 ? (
+              <span className="nm-badge" aria-label={`${due} cards due`}>
+                {due > 9 ? "9+" : due}
+              </span>
+            ) : null}
           </Link>
         ))}
       </nav>

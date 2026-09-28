@@ -18,16 +18,19 @@ from ..schemas.groups import GroupOut
 from ..schemas.notes import NoteOut
 from ..schemas.notifications import NotificationOut
 from ..schemas.settings import UserSettings
+from ..schemas.study import FlashcardOut, StudyOverview
 from ..schemas.subjects import SubjectOut
 from ..schemas.tasks import TaskOut
 from ..schemas.users import PublicUser
 from ..services import (
     auth_services,
     event_services,
+    flashcard_services,
     group_services,
     note_services,
     notification_services,
     settings_services,
+    study_services,
     task_services,
 )
 
@@ -43,6 +46,8 @@ class BootstrapOut(BaseModel):
     notes: list[NoteOut]
     events: list[EventOut]
     notifications: list[NotificationOut]
+    flashcards: list[FlashcardOut]
+    study: StudyOverview
 
 
 @router.get("", response_model=BootstrapOut)
@@ -61,4 +66,6 @@ def bootstrap(user: User = Depends(require_user), db: DbSession = Depends(get_db
         notes=note_services.list_notes(db, user),
         events=event_services.list_events(db, user),
         notifications=notification_services.derive(db, user),
+        flashcards=flashcard_services.list_cards(db, user),
+        study=study_services.overview(db, user),
     )

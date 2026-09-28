@@ -10,6 +10,30 @@ class RequestOut(BaseModel):
     answerNoteId: str | None
 
 
+class StudyPosition(BaseModel):
+    page: int = Field(default=1, ge=1)
+    scroll: float = 0
+
+
+class StudyHighlight(BaseModel):
+    """A text selection in a PDF, with rects normalized to the page."""
+
+    id: str = Field(max_length=64)
+    page: int = Field(ge=1)
+    rects: list[list[float]] = Field(default_factory=list)
+    quote: str = Field(default="", max_length=2000)
+    color: str = Field(default="amber", max_length=16)
+    createdAt: int = 0
+    tag: str | None = Field(default=None, max_length=40)
+
+
+class NoteStudy(BaseModel):
+    position: StudyPosition = Field(default_factory=StudyPosition)
+    highlights: list[StudyHighlight] = Field(default_factory=list)
+    # Video resume marks in seconds; the last one is where the player opens.
+    timestamps: list[float] = Field(default_factory=list)
+
+
 class NoteOut(BaseModel):
     id: str
     scope: str
@@ -26,6 +50,8 @@ class NoteOut(BaseModel):
     fileSize: int | None
     pinned: bool
     tags: list[str]
+    study: NoteStudy
+    matchSnippet: str | None = None
     createdBy: str | None
     createdAt: int
     updatedAt: int
@@ -52,6 +78,7 @@ class NotePatch(BaseModel):
     type: NoteType | None = None
     tags: list[str] | None = Field(default=None, max_length=30)
     pinned: bool | None = None
+    study: NoteStudy | None = None
 
 
 class ShareRequest(BaseModel):
@@ -102,3 +129,8 @@ class FilePresignOut(BaseModel):
 
 class FileUrlOut(BaseModel):
     url: str
+
+
+class FileTextOut(BaseModel):
+    text: str
+    truncated: bool
