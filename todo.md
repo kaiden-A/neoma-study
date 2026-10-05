@@ -29,12 +29,14 @@ One stop centre for studying:
       thumbnails per type, `NoteRow`/`NoteCard`/`FilePreview`, redesigned
       `NoteEditor`, Add-modal drop zone, mobile notes pass (scrollable filter
       chips, list-only phones, bottom action bar, `NoteDetailsSheet`).
-- [x] Markdown editor on the note page — toolbar + Ctrl+B/I, H1–H3,
-      bullet/numbered lists, checklists, tables, image links; Write/Preview
-      toggle (`lib/editorView.ts`); list continuation on Enter, Tab indent;
-      `lib/markdown.ts` render/strip; email-safe, escape-first renderer (no
-      raw HTML). Vault rows/cards/group feed/palette strip syntax. Inline
-      image paste/upload still needs the attachment model (see §3.6).
+- [x] Notion-style note editor (TipTap 3 + `@tiptap/markdown`) — in-place
+      WYSIWYG stored as Markdown in `notes.body`; `/` slash menu at the caret
+      (`slashItems.ts`, `SlashMenu.tsx`, `slashCommand.tsx`), selection bubble
+      (bold/italic/underline/strike/code/link), task lists, tables, image
+      links and markdown input rules (`RichTextEditor.tsx`); group feeds
+      render Markdown through `lib/markdown.ts`; rows/cards/palette strip
+      syntax. Inline image paste/upload still needs the attachment model
+      (see §3.6).
 - [x] Explicit save — dirty tracking over title/body/tags/subject, Save button
       (header on desktop, bottom bar on mobile), Ctrl/Cmd+S, leave guard
       (Cancel / Discard / Save & leave) + `beforeunload`. Autosave removed.

@@ -6,26 +6,16 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { FilePreview } from "@/components/notes/FilePreview";
 import { LinkPreview } from "@/components/notes/LinkPreview";
-import { MarkdownToolbar, type MarkdownAction } from "@/components/notes/MarkdownToolbar";
 import { useNoteActions } from "@/components/notes/NoteActions";
 import { NoteDetailsSheet } from "@/components/notes/NoteDetailsSheet";
+import { RichTextEditor, type RichTextEditorHandle } from "@/components/notes/RichTextEditor";
 import { StudyTimer } from "@/components/notes/StudyTimer";
 import { EmptyState, MarkerChip } from "@/components/ui/bits";
 import { Field } from "@/components/ui/bits";
 import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { fmtDateTime, fmtRelative } from "@/lib/dates";
-import { getEditorMode, getServerEditorMode, setEditorMode, subscribeEditorMode } from "@/lib/editorView";
-import {
-  continueList,
-  indentSelection,
-  isListLine,
-  renderMarkdown,
-  stripMarkdown,
-  wrapSelection,
-  type MdEdit,
-  type MdState,
-} from "@/lib/markdown";
+import { stripMarkdown } from "@/lib/markdown";
 import { parseTags } from "@/lib/files";
 import { parseVideoUrl, videoThumbUrl } from "@/lib/links";
 import { noteType } from "@/lib/markers";
@@ -49,6 +39,15 @@ interface Baseline {
   body: string;
   tags: string[];
   subjectId: string | null;
+}
+
+// Draft against the saved body with cosmetic whitespace differences ignored,
+// so a markdown round-trip through the editor never shows a phantom dirty dot.
+function comparable(value: string): string {
+  return value
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 const STUDY_MODES: { id: StudyMode; label: string; icon: string }[] = [
@@ -85,7 +84,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   } | null>(null);
   const loaded = useRef(false);
   const studyRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<RichTextEditorHandle>(null);
   const videoTimeRef = useRef(0);
   const positionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekCounter = useRef(0);
@@ -94,7 +93,6 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const now = useNow(30_000);
 
   const study = useSyncExternalStore(subscribeStudyView, getStudyView, getServerStudyView);
-  const editorMode = useSyncExternalStore(subscribeEditorMode, getEditorMode, getServerEditorMode);
   const isFocus = useMediaQuery("(min-width: 1081px)");
   const isPhone = useIsPhone();
 
@@ -158,7 +156,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const dirty = Boolean(
     baseline &&
       (title !== baseline.title ||
-        body !== baseline.body ||
+        comparable(body) !== comparable(baseline.body) ||
         subjectId !== baseline.subjectId ||
         parsedTags.join("\u0000") !== baseline.tags.join("\u0000")),
   );
@@ -314,8 +312,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   };
 
   const copyExcerpt = (highlight: StudyHighlight) => {
-    const addition = `> ${highlight.quote}\n[p. ${highlight.page}]`;
-    setBody((current) => (current.trim() ? `${current}\n\n${addition}` : addition));
+    editorRef.current?.insertMarkdown(`\n\n> ${highlight.quote}\n>\n> [p. ${highlight.page}]\n\n`);
   };
 
   const jumpToPage = (page: number) => {
@@ -332,73 +329,8 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   };
 
   const stampTime = () => {
-    const textarea = bodyRef.current;
     const stamp = `[${formatClock(Math.max(0, Math.floor(videoTimeRef.current)))}]`;
-    const start = textarea?.selectionStart ?? body.length;
-    const end = textarea?.selectionEnd ?? start;
-    setBody(`${body.slice(0, start)}${stamp}${body.slice(end)}`);
-    requestAnimationFrame(() => {
-      if (!textarea) return;
-      textarea.focus();
-      textarea.selectionStart = textarea.selectionEnd = start + stamp.length;
-    });
-  };
-
-  const runEdit = (edit: MdEdit | null) => {
-    if (!edit) return;
-    setBody(edit.value);
-    requestAnimationFrame(() => {
-      const textarea = bodyRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(edit.start, edit.end);
-    });
-  };
-
-  const bodyState = (textarea: HTMLTextAreaElement): MdState => ({
-    value: body,
-    start: textarea.selectionStart,
-    end: textarea.selectionEnd,
-  });
-
-  const runToolbarAction = (action: MarkdownAction) => {
-    const textarea = bodyRef.current;
-    if (!textarea) return;
-    runEdit(action.run(bodyState(textarea)));
-  };
-
-  const handleBodyKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const textarea = event.currentTarget;
-    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
-      const key = event.key.toLowerCase();
-      if (key === "b") {
-        event.preventDefault();
-        runEdit(wrapSelection(bodyState(textarea), "**"));
-      } else if (key === "i") {
-        event.preventDefault();
-        runEdit(wrapSelection(bodyState(textarea), "*"));
-      }
-      return;
-    }
-    if (event.key === "Enter" && !event.shiftKey) {
-      const edit = continueList(bodyState(textarea));
-      if (edit) {
-        event.preventDefault();
-        runEdit(edit);
-      }
-      return;
-    }
-    if (event.key === "Tab") {
-      event.preventDefault();
-      const state = bodyState(textarea);
-      if (isListLine(state.value, state.start)) {
-        runEdit(indentSelection(state, event.shiftKey));
-        return;
-      }
-      if (event.shiftKey) return;
-      const next = `${body.slice(0, state.start)}  ${body.slice(state.end)}`;
-      runEdit({ value: next, start: state.start + 2, end: state.start + 2 });
-    }
+    editorRef.current?.insertMarkdown(stamp);
   };
 
   const openCardModal = (front = "", sourceHighlightId: string | null = null) => {
@@ -662,55 +594,21 @@ export function NoteEditor({ noteId }: { noteId: string }) {
           </button>
         ) : null}
         <div className="nm-spacer" />
-        <div className="nm-seg nm-seg--sm nm-writer-view" role="group" aria-label="Editor view">
-          {(
-            [
-              { id: "write", label: "Write", icon: "fa-pen" },
-              { id: "preview", label: "Preview", icon: "fa-eye" },
-            ] as const
-          ).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`nm-seg-btn${editorMode === item.id ? " is-active" : ""}`}
-              aria-pressed={editorMode === item.id}
-              onClick={() => setEditorMode(item.id)}
-            >
-              <i className={`fa-solid ${item.icon}`} aria-hidden="true" />
-              {item.label}
-            </button>
-          ))}
-        </div>
         <span className="nm-mono nm-writer-count">
           {words} word{words === 1 ? "" : "s"}
         </span>
       </div>
       {marksRow}
-      {editorMode === "write" ? (
-        <>
-          <MarkdownToolbar onAction={runToolbarAction} />
-          <textarea
-            id="note-body"
-            ref={bodyRef}
-            className="nm-textarea nm-note-body"
-            rows={14}
-            value={body}
-            placeholder="Write it out in your own words — that is what makes it stick."
-            onChange={(event) => setBody(event.target.value)}
-            onKeyDown={handleBodyKeyDown}
-          />
-        </>
-      ) : body.trim() ? (
-        <div
-          className="nm-md nm-note-body nm-md-preview"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
-        />
-      ) : (
-        <p className="nm-md-empty">Nothing written yet — switch to Write to start.</p>
-      )}
+      <RichTextEditor
+        key={note.id}
+        ref={editorRef}
+        initialMarkdown={note.body}
+        placeholder="Write it out in your own words… Type / for headings, lists, tables and more."
+        onChange={setBody}
+      />
       <p className="nm-help nm-writer-help">
-        Markdown: **bold**, *italic*, # headings, - lists, - [ ] checklists, | tables | and ![]() image
-        links. Press Save changes when you are done.
+        Type <span className="nm-mono">/</span> for blocks, or select text for bold, italic and links.
+        Press Save changes when you are done.
       </p>
     </div>
   );
