@@ -29,6 +29,12 @@ One stop centre for studying:
       thumbnails per type, `NoteRow`/`NoteCard`/`FilePreview`, redesigned
       `NoteEditor`, Add-modal drop zone, mobile notes pass (scrollable filter
       chips, list-only phones, bottom action bar, `NoteDetailsSheet`).
+- [x] Markdown editor on the note page — toolbar + Ctrl+B/I, H1–H3,
+      bullet/numbered lists, checklists, tables, image links; Write/Preview
+      toggle (`lib/editorView.ts`); list continuation on Enter, Tab indent;
+      `lib/markdown.ts` render/strip; email-safe, escape-first renderer (no
+      raw HTML). Vault rows/cards/group feed/palette strip syntax. Inline
+      image paste/upload still needs the attachment model (see §3.6).
 - [x] Explicit save — dirty tracking over title/body/tags/subject, Save button
       (header on desktop, bottom bar on mobile), Ctrl/Cmd+S, leave guard
       (Cancel / Discard / Save & leave) + `beforeunload`. Autosave removed.
@@ -200,8 +206,8 @@ One stop centre for studying:
 
 - [ ] Offline: cache the bootstrap payload + queue note edits (lecture-hall
       wifi). PWA shell already exists.
-- [ ] Markdown + LaTeX rendering (body is plain text today; server cap 20k
-      chars, one attachment per note).
+- [ ] LaTeX rendering (body is Markdown now; server cap 20k chars, one
+      attachment per note).
 - [ ] Inline images / paste into notes, handwriting & drawing (needs an
       inline-attachment model).
 - [ ] AI-generated flashcards from a note (after §3.5).

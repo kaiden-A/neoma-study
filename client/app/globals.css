@@ -1855,6 +1855,74 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-writer .nm-note-body { min-height: 300px; border: 0; padding: 2px 0 10px; background: transparent; }
 .nm-writer .nm-note-body:focus { border-color: transparent; box-shadow: none; }
 .nm-writer-help { margin-top: 7px; padding-top: 8px; border-top: 1px dashed var(--rule); }
+.nm-writer-head { flex-wrap: wrap; row-gap: 6px; }
+
+/* ---------- markdown editor ---------- */
+.nm-md-toolbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 1px;
+  padding: 3px 0 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px dashed var(--rule);
+}
+.nm-md-tool {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  color: var(--ink-muted);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.nm-md-tool:hover { background: var(--muted-bg); color: var(--ink); }
+.nm-md-tool:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.nm-md-tool--text {
+  width: auto; padding: 0 7px;
+  font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+}
+.nm-md-preview { overflow-wrap: anywhere; }
+.nm-md { font-size: 0.95rem; line-height: 1.6; color: var(--ink); }
+.nm-md > :first-child { margin-top: 0; }
+.nm-md > :last-child { margin-bottom: 0; }
+.nm-md p { margin: 0 0 0.7em; }
+.nm-md h1, .nm-md h2, .nm-md h3, .nm-md h4, .nm-md h5, .nm-md h6 {
+  font-family: var(--font-display);
+  font-weight: 600; line-height: 1.25;
+  margin: 1.1em 0 0.45em;
+}
+.nm-md h1 { font-size: 1.45rem; }
+.nm-md h2 { font-size: 1.25rem; }
+.nm-md h3 { font-size: 1.08rem; }
+.nm-md h4, .nm-md h5, .nm-md h6 { font-size: 0.98rem; }
+.nm-md ul, .nm-md ol { margin: 0 0 0.7em; padding-left: 1.4em; }
+.nm-md ul { list-style: disc; }
+.nm-md ol { list-style: decimal; }
+.nm-md li { margin: 0.18em 0; }
+.nm-md li::marker { color: var(--ink-muted); }
+.nm-md li.nm-md-task { list-style: none; margin-left: -1.25em; }
+.nm-md li.nm-md-task input { margin-right: 7px; accent-color: var(--mark-mint); }
+.nm-md li.nm-md-task.is-done { color: var(--ink-muted); text-decoration: line-through; }
+.nm-md blockquote {
+  margin: 0 0 0.7em; padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--mk, var(--rule));
+  color: var(--ink-muted);
+}
+.nm-md code {
+  font-family: var(--font-mono); font-size: 0.84em;
+  padding: 1px 5px; border-radius: 6px;
+  background: var(--muted-bg);
+}
+.nm-md pre {
+  margin: 0 0 0.7em; padding: 10px 12px;
+  border: 1px solid var(--rule); border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--muted-bg) 55%, transparent);
+  overflow-x: auto;
+}
+.nm-md pre code { padding: 0; background: none; font-size: 0.82rem; line-height: 1.5; }
+.nm-md a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.nm-md img { max-width: 100%; border-radius: var(--radius-control); margin: 4px 0; }
+.nm-md hr { border: 0; border-top: 1px solid var(--rule); margin: 1.1em 0; }
+.nm-md table { width: 100%; border-collapse: collapse; margin: 0 0 0.8em; font-size: 0.88rem; }
+.nm-md th, .nm-md td { border: 1px solid var(--rule); padding: 6px 9px; text-align: left; vertical-align: top; }
+.nm-md th { background: color-mix(in srgb, var(--muted-bg) 60%, transparent); font-weight: 600; }
+.nm-md-empty { margin: 0; padding: 14px 0; color: var(--ink-muted); font-size: 0.9rem; }
 
 /* ---------- add modal dropzone ---------- */
 .nm-dropzone {

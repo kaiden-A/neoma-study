@@ -10,6 +10,7 @@ import { TaskModal } from "@/components/tasks/TaskModal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { fmtDateTime, fmtRelative } from "@/lib/dates";
 import { eventType, noteType } from "@/lib/markers";
+import { stripMarkdown } from "@/lib/markdown";
 import { useStore } from "@/lib/store";
 import { useNow } from "@/lib/useNow";
 import { applyTheme } from "@/lib/theme";
@@ -163,7 +164,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         label: note.title,
         icon: noteType(note.type).icon,
         hint: `Notes · ${noteType(note.type).label}`,
-        keywords: `note vault ${note.tags.join(" ")} ${note.body}`,
+        keywords: `note vault ${note.tags.join(" ")} ${stripMarkdown(note.body)}`,
         run: go(`/vault/${note.id}`),
       }));
 

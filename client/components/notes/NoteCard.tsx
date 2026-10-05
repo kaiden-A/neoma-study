@@ -5,6 +5,7 @@ import { NoteThumb } from "@/components/notes/NoteThumb";
 import { MarkerChip } from "@/components/ui/bits";
 import { fmtRelative, plain, truncate } from "@/lib/dates";
 import { parseVideoUrl } from "@/lib/links";
+import { stripMarkdown } from "@/lib/markdown";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
@@ -68,7 +69,7 @@ export function NoteCard({
             {note.title}
           </button>
         </h3>
-        {note.body ? <p className="nm-notecard-body">{truncate(plain(note.body), 120)}</p> : null}
+        {note.body ? <p className="nm-notecard-body">{truncate(plain(stripMarkdown(note.body)), 120)}</p> : null}
         <div className="nm-notecard-ft">
           {group ? (
             <span className={`nm-chip nm-chip--sm nm-chip--link nm-mk-${group.color}`} title={group.name}>

@@ -4,6 +4,7 @@ import { useNoteActions } from "@/components/notes/NoteActions";
 import { NoteThumb } from "@/components/notes/NoteThumb";
 import { MarkerChip } from "@/components/ui/bits";
 import { fmtRelative, plain, truncate } from "@/lib/dates";
+import { stripMarkdown } from "@/lib/markdown";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
@@ -23,7 +24,8 @@ export function NoteRow({
   const type = noteType(note.type);
   const group = note.groupId ? store.groupById(note.groupId) : null;
   const subject = note.subjectId ? store.subjectById(note.subjectId) : null;
-  const snippet = note.matchSnippet ?? (note.body ? truncate(plain(note.body), 170) : note.url ?? "");
+  const snippet =
+    note.matchSnippet ?? (note.body ? truncate(plain(stripMarkdown(note.body)), 170) : note.url ?? "");
 
   return (
     <article className={`nm-noterow nm-mk-${type.marker}${note.pinned ? " is-pinned" : ""}`}>

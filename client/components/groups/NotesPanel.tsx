@@ -10,6 +10,7 @@ import { Menu } from "@/components/ui/Menu";
 import { useOverlays } from "@/components/ui/Overlays";
 import { domainOf, fmtRelative } from "@/lib/dates";
 import { MAX_FILE_BYTES, compressImage, fmtBytes, typeFromFile } from "@/lib/files";
+import { stripMarkdown } from "@/lib/markdown";
 import { noteType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
 import type { Group, Note, NoteType } from "@/lib/types";
@@ -378,7 +379,7 @@ export function NotesPanel({ group }: { group: Group }) {
                   </button>
                 </div>
                 <h3 className="nm-notefeed-title">{note.title}</h3>
-                {note.body ? <p className="nm-notefeed-body">{note.body}</p> : null}
+                {note.body ? <p className="nm-notefeed-body">{stripMarkdown(note.body)}</p> : null}
                 {note.fileId ? (
                   <div className="nm-notefeed-file">
                     <NoteThumb note={note} alt={`Preview of ${note.title}`} className="nm-notefeed-file-thumb" />
