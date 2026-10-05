@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { PublicLinkModal } from "@/components/notes/PublicLinkModal";
 import { ShareToGroupModal } from "@/components/notes/ShareToGroupModal";
 import { Menu } from "@/components/ui/Menu";
 import { useOverlays } from "@/components/ui/Overlays";
@@ -21,6 +22,7 @@ export function useNoteActions(
   const { toast, prompt, confirm } = useOverlays();
   const [menuAt, setMenuAt] = useState<{ right: number; top: number } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [publicOpen, setPublicOpen] = useState(false);
 
   function openMenu(event: React.MouseEvent<HTMLElement>) {
     event.stopPropagation();
@@ -85,13 +87,17 @@ export function useNoteActions(
             { label: "Rename", icon: "fa-pen", onSelect: () => void rename() },
             ...(note.groupId
               ? []
-              : [{ label: "Share to group", icon: "fa-share-nodes", onSelect: () => setShareOpen(true) }]),
+              : [
+                  { label: "Share to group", icon: "fa-share-nodes", onSelect: () => setShareOpen(true) },
+                  { label: "Get public link", icon: "fa-link", onSelect: () => setPublicOpen(true) },
+                ]),
             { separator: true },
             { label: "Delete item", icon: "fa-trash", danger: true, onSelect: () => void remove() },
           ]}
         />
       ) : null}
       {note && shareOpen ? <ShareToGroupModal note={note} onClose={() => setShareOpen(false)} /> : null}
+      {note && publicOpen ? <PublicLinkModal note={note} onClose={() => setPublicOpen(false)} /> : null}
     </>
   );
 
@@ -99,6 +105,7 @@ export function useNoteActions(
     openMenu,
     overlays,
     share: () => note && setShareOpen(true),
+    publicLink: () => note && setPublicOpen(true),
     remove,
   };
 }

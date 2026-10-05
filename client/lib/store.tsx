@@ -30,6 +30,7 @@ import type {
   Note,
   NoteCreateInput,
   NotePatchInput,
+  NoteShareState,
   NotificationItem,
   PublicUser,
   StudyOverview,
@@ -173,6 +174,9 @@ interface StoreValue {
   updateNote: (id: string, patch: NotePatchInput) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
   shareNote: (id: string, groupId: string, topicId: string | null, includeFile?: boolean) => Promise<Note>;
+  fetchNoteShare: (id: string) => Promise<NoteShareState>;
+  enableNoteShare: (id: string) => Promise<NoteShareState>;
+  disableNoteShare: (id: string) => Promise<void>;
   answerRequest: (id: string, answer: AnswerInput) => Promise<Note>;
   createSubject: (name: string) => Promise<Subject>;
   updateSubject: (id: string, patch: { name?: string; color?: string }) => Promise<Subject>;
@@ -821,6 +825,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         });
         replaceNote(note);
         return note;
+      },
+      fetchNoteShare: async (id) => apiGet<NoteShareState>(`/api/notes/${id}/share-link`),
+      enableNoteShare: async (id) => apiPost<NoteShareState>(`/api/notes/${id}/share-link`),
+      disableNoteShare: async (id) => {
+        await apiDelete(`/api/notes/${id}/share-link`);
       },
       answerRequest: async (id, answer) => {
         const note = await apiPost<Note>(`/api/notes/${id}/answer`, answer);

@@ -152,6 +152,31 @@ export interface Note {
   request: RequestState | null;
 }
 
+export interface NoteShareState {
+  enabled: boolean;
+  url: string | null;
+}
+
+export interface PublicFileMeta {
+  name: string;
+  contentType: string;
+  size: number;
+}
+
+/** What an anonymous visitor sees at /s/[token]; redacted server-side. */
+export interface PublicNote {
+  title: string;
+  body: string;
+  type: NoteType;
+  url: string | null;
+  tags: string[];
+  file: PublicFileMeta | null;
+  sharedBy: string;
+  sharedAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Subject {
   id: string;
   name: string;

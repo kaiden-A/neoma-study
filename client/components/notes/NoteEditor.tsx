@@ -758,15 +758,26 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             {saveLabel}
           </button>
           {group ? null : (
-            <button
-              type="button"
-              className="nm-btn nm-btn--secondary nm-btn--sm"
-              aria-label="Share to group"
-              onClick={() => actions.share()}
-            >
-              <i className="fa-solid fa-share-nodes" aria-hidden="true" />
-              <span className="nm-btn-label">Share to group</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className="nm-btn nm-btn--secondary nm-btn--sm"
+                aria-label="Public link"
+                onClick={() => actions.publicLink()}
+              >
+                <i className="fa-solid fa-link" aria-hidden="true" />
+                <span className="nm-btn-label">Public link</span>
+              </button>
+              <button
+                type="button"
+                className="nm-btn nm-btn--secondary nm-btn--sm"
+                aria-label="Share to group"
+                onClick={() => actions.share()}
+              >
+                <i className="fa-solid fa-share-nodes" aria-hidden="true" />
+                <span className="nm-btn-label">Share to group</span>
+              </button>
+            </>
           )}
           <button type="button" className="nm-iconbtn" aria-label="Item actions" onClick={actions.openMenu}>
             <i className="fa-solid fa-ellipsis" aria-hidden="true" />

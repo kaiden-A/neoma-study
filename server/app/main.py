@@ -27,6 +27,7 @@ from .routers import (
     notes_router,
     notifications_router,
     settings_router,
+    shares_router,
     study_router,
     subjects_router,
     tasks_router,
@@ -113,6 +114,7 @@ app.include_router(groups_router.router)
 app.include_router(invites_router.router)
 app.include_router(tasks_router.router)
 app.include_router(notes_router.router)
+app.include_router(shares_router.router)
 app.include_router(links_router.router)
 app.include_router(flashcards_router.router)
 app.include_router(study_router.router)

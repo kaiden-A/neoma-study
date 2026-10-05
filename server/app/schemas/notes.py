@@ -58,6 +58,35 @@ class NoteOut(BaseModel):
     request: RequestOut | None
 
 
+class NoteShareOut(BaseModel):
+    """The owner's view of a note's public link."""
+
+    enabled: bool
+    url: str | None = None
+
+
+class PublicFileMeta(BaseModel):
+    name: str
+    contentType: str
+    size: int
+
+
+class PublicNoteOut(BaseModel):
+    """What an anonymous visitor sees. Deliberately redacted: no ids, no
+    subject/topic, no study state, no request internals."""
+
+    title: str
+    body: str
+    type: NoteType
+    url: str | None
+    tags: list[str]
+    file: PublicFileMeta | None
+    sharedBy: str
+    sharedAt: int
+    createdAt: int
+    updatedAt: int
+
+
 class NoteCreate(BaseModel):
     type: NoteType = NoteType.note
     title: str = Field(default="", max_length=300)

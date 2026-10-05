@@ -11,7 +11,7 @@ from .enums import (
 from .events import Event
 from .google import GoogleAccount
 from .groups import EmailLog, Group, GroupLink, GroupMember, GroupTopic, NotificationState
-from .notes import FileObject, Note, Subject
+from .notes import FileObject, Note, NoteShare, Subject
 from .sessions import Session
 from .study import Flashcard, StudySession
 from .tasks import Task, TaskAssignee, TaskLink, TaskSubtask
@@ -32,6 +32,7 @@ __all__ = [
     "GroupTopic",
     "Note",
     "NoteScope",
+    "NoteShare",
     "NoteType",
     "NotificationState",
     "Session",

@@ -64,6 +64,25 @@ class FileObject(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
+class NoteShare(Base):
+    """A public read-only link to a personal note.
+
+    One row per note (the PK), so re-sharing returns the same link and
+    deleting the row revokes it. The token is stored as-is: the owner must be
+    able to re-display the link, and the rows here guard no more than the note
+    bodies already sitting in `notes`.
+    """
+
+    __tablename__ = "note_shares"
+
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class Note(Base):
     """A personal note, or a note shared into a group (scope='group').
 

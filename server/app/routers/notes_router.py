@@ -7,8 +7,8 @@ from ..database import get_db
 from ..dependencies import get_storage, require_user
 from ..models import User
 from ..models.enums import NoteScope, NoteType
-from ..schemas.notes import AnswerRequest, NoteCreate, NoteOut, NotePatch, ShareRequest
-from ..services import note_services
+from ..schemas.notes import AnswerRequest, NoteCreate, NoteOut, NotePatch, NoteShareOut, ShareRequest
+from ..services import note_services, share_services
 from ..services.storage_services import Storage
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
@@ -80,6 +80,27 @@ def share_note(
     return note_services.share_to_group(
         db, user, note_id, data.groupId, data.topicId, storage=storage, include_file=data.includeFile
     )
+
+
+@router.get("/{note_id}/share-link", response_model=NoteShareOut)
+def get_share_link(
+    note_id: uuid.UUID, user: User = Depends(require_user), db: DbSession = Depends(get_db)
+) -> NoteShareOut:
+    return share_services.get_share(db, user, note_id)
+
+
+@router.post("/{note_id}/share-link", response_model=NoteShareOut)
+def create_share_link(
+    note_id: uuid.UUID, user: User = Depends(require_user), db: DbSession = Depends(get_db)
+) -> NoteShareOut:
+    return share_services.enable_share(db, user, note_id)
+
+
+@router.delete("/{note_id}/share-link", status_code=204)
+def delete_share_link(
+    note_id: uuid.UUID, user: User = Depends(require_user), db: DbSession = Depends(get_db)
+) -> None:
+    share_services.disable_share(db, user, note_id)
 
 
 @router.post("/{note_id}/answer", response_model=NoteOut, status_code=201)
