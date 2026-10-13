@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { AddItemModal } from "@/components/notes/AddItemModal";
+import { FolderGlyph } from "@/components/notes/FolderGlyph";
 import { NoteCard } from "@/components/notes/NoteCard";
 import { NoteRow } from "@/components/notes/NoteRow";
 import { StudyDashboard } from "@/components/notes/StudyDashboard";
+import { VaultHome } from "@/components/notes/VaultHome";
 import { EmptyState } from "@/components/ui/bits";
-import { Modal } from "@/components/ui/Modal";
 import { Menu } from "@/components/ui/Menu";
+import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
@@ -18,6 +20,8 @@ import { useIsPhone } from "@/lib/useMediaQuery";
 import { getServerVaultView, getVaultView, setVaultView, subscribeVaultView, type VaultView } from "@/lib/vaultView";
 
 type FilterId = "all" | "notes" | "files" | "links";
+
+type Listing = "home" | "all" | "folder" | "unsorted";
 
 const FILTERS: { id: FilterId; label: string; icon: string; marker?: string }[] = [
   { id: "all", label: "Everything", icon: "fa-layer-group" },
@@ -33,26 +37,27 @@ export default function VaultPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast, prompt } = useOverlays();
-  // The open folder lives in the URL so Back, refresh and shared links keep
-  // it: /vault = All notes, ?subject=unsorted = the no-subject bucket,
-  // ?subject=<id> = that subject. Stale ids fall back to All notes.
+  // Home is the folder grid; ?subject= opens one folder (or the unsorted
+  // bucket) and ?view=all is the flat list. A stale subject id falls home.
   const folderParam = searchParams.get("subject");
   const subjectId =
     folderParam === "unsorted"
       ? "unsorted"
       : folderParam && store.subjects.some((subject) => subject.id === folderParam)
         ? folderParam
-        : "all";
+        : null;
+  const listing: Listing = subjectId === "unsorted" ? "unsorted" : subjectId ? "folder" : searchParams.get("view") === "all" ? "all" : "home";
   const [filter, setFilter] = useState<FilterId>("all");
   const [query, setQuery] = useState("");
   const [remote, setRemote] = useState<Note[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [adding, setAdding] = useState(false);
   const [dashboard, setDashboard] = useState(false);
-  const [subjectModal, setSubjectModal] = useState<"new" | null>(null);
-  const [subjectName, setSubjectName] = useState("");
-  const [subjectMenu, setSubjectMenu] = useState<{ id: string; left: number; top: number } | null>(null);
-  const [deleteSubject, setDeleteSubject] = useState<string | null>(null);
+  const [folderModal, setFolderModal] = useState<"new" | null>(null);
+  const [folderDraft, setFolderDraft] = useState("");
+  const [folderMenu, setFolderMenu] = useState<{ id: string; left: number; top: number } | null>(null);
+  const [switcher, setSwitcher] = useState<{ left: number; top: number } | null>(null);
+  const [deleteFolder, setDeleteFolder] = useState<string | null>(null);
   const [moveTo, setMoveTo] = useState("");
   const view = useSyncExternalStore(subscribeVaultView, getVaultView, getServerVaultView);
   const isPhone = useIsPhone();
@@ -61,21 +66,28 @@ export default function VaultPage() {
   const effectiveView: VaultView = isPhone ? "list" : view;
 
   const notes = store.personalNotes();
+  const searchingNow = Boolean(query.trim());
+  const showResults = listing === "home" && searchingNow;
+  const renderHome = listing === "home" && !searchingNow;
+  // The type chips only exist in the listing views; a filter left over from
+  // one must not quietly narrow a home search.
+  const activeFilter: FilterId = listing === "home" ? "all" : filter;
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     // Server results (file text, group notes) replace the local list once the
-    // "Search inside files" run lands; the subject/type filters still apply.
+    // "Search inside files" run lands; the folder/type filters still apply.
     const source = remote ?? notes;
     return source
       .filter((note) => {
-        if (subjectId === "all") return true;
+        if (subjectId === null) return true;
         if (subjectId === "unsorted") return note.subjectId === null;
         return note.subjectId === subjectId;
       })
       .filter((note) => {
-        if (filter === "notes") return note.type === "note";
-        if (filter === "files") return FILE_TYPES.has(note.type);
-        if (filter === "links") return note.type === "link";
+        if (activeFilter === "notes") return note.type === "note";
+        if (activeFilter === "files") return FILE_TYPES.has(note.type);
+        if (activeFilter === "links") return note.type === "link";
         return true;
       })
       .filter((note) => {
@@ -90,12 +102,12 @@ export default function VaultPage() {
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
         return b.updatedAt - a.updatedAt;
       });
-  }, [notes, remote, subjectId, filter, query]);
+  }, [notes, remote, subjectId, activeFilter, query]);
 
   // The filter counts describe the open folder, not the whole vault.
-  const folderNotes = useMemo(
+  const scopedNotes = useMemo(
     () =>
-      subjectId === "all"
+      subjectId === null
         ? notes
         : notes.filter((note) =>
             subjectId === "unsorted" ? note.subjectId === null : note.subjectId === subjectId,
@@ -104,17 +116,18 @@ export default function VaultPage() {
   );
 
   const counts = {
-    all: folderNotes.length,
-    notes: folderNotes.filter((note) => note.type === "note").length,
-    files: folderNotes.filter((note) => FILE_TYPES.has(note.type)).length,
-    links: folderNotes.filter((note) => note.type === "link").length,
+    all: scopedNotes.length,
+    notes: scopedNotes.filter((note) => note.type === "note").length,
+    files: scopedNotes.filter((note) => FILE_TYPES.has(note.type)).length,
+    links: scopedNotes.filter((note) => note.type === "link").length,
   };
 
-  const selectedSubject = subjectId === "all" ? null : store.subjectById(subjectId);
+  const selectedFolder = subjectId === null || subjectId === "unsorted" ? null : store.subjectById(subjectId);
   const unsortedCount = notes.filter((note) => note.subjectId === null).length;
   const folderName =
-    subjectId === "all" ? "All notes" : subjectId === "unsorted" ? "Unsorted" : (selectedSubject?.name ?? "All notes");
-  const filtering = Boolean(query.trim()) || filter !== "all";
+    listing === "folder" ? (selectedFolder?.name ?? "Folder") : listing === "unsorted" ? "Unsorted" : "All files";
+  const filtering = searchingNow || activeFilter !== "all";
+  const countIn = (id: string) => notes.filter((note) => note.subjectId === id).length;
 
   function openNote(note: Note) {
     router.push(`/vault/${note.id}`);
@@ -132,33 +145,76 @@ export default function VaultPage() {
     setSearching(false);
   }
 
-  async function createSubject() {
-    if (!subjectName.trim()) return;
-    await store.createSubject(subjectName.trim());
-    setSubjectName("");
-    setSubjectModal(null);
-    toast("Subject created", { kind: "success" });
+  async function createFolder() {
+    if (!folderDraft.trim()) return;
+    await store.createSubject(folderDraft.trim());
+    setFolderDraft("");
+    setFolderModal(null);
+    toast("Folder created", { kind: "success" });
   }
 
-  async function renameSubject(id: string, current: string) {
-    const name = await prompt({ title: "Rename subject", label: "Name", value: current, confirmLabel: "Rename" });
+  async function renameFolder(id: string, current: string) {
+    const name = await prompt({ title: "Rename folder", label: "Name", value: current, confirmLabel: "Rename" });
     if (name && name.trim()) await store.updateSubject(id, { name: name.trim() });
   }
 
-  async function removeSubject() {
-    if (!deleteSubject) return;
-    await store.deleteSubject(deleteSubject, moveTo || null);
-    if (subjectId === deleteSubject) router.replace("/vault");
-    setDeleteSubject(null);
+  async function removeFolder() {
+    if (!deleteFolder) return;
+    await store.deleteSubject(deleteFolder, moveTo || null);
+    if (subjectId === deleteFolder) router.replace("/vault");
+    setDeleteFolder(null);
     setMoveTo("");
-    toast("Subject deleted", { kind: "info" });
+    toast("Folder deleted", { kind: "info" });
   }
+
+  function openFolderMenu(id: string, event: React.MouseEvent<HTMLElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setFolderMenu({
+      id,
+      left: Math.max(12, Math.min(rect.left, window.innerWidth - 200)),
+      top: Math.min(rect.bottom + 6, window.innerHeight - 200),
+    });
+  }
+
+  function openSwitcher(event: React.MouseEvent<HTMLElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setSwitcher({
+      left: Math.max(12, Math.min(rect.left, window.innerWidth - 240)),
+      top: Math.min(rect.bottom + 6, window.innerHeight - 320),
+    });
+  }
+
+  const switcherItems = [
+    ...store.subjects.map((subject) => ({
+      label: subject.name,
+      dot: subject.color,
+      hint: String(countIn(subject.id)),
+      current: subjectId === subject.id,
+      onSelect: () => router.push(`/vault?subject=${subject.id}`),
+    })),
+    {
+      label: "Unsorted",
+      icon: "fa-inbox",
+      hint: String(unsortedCount),
+      current: subjectId === "unsorted",
+      onSelect: () => router.push("/vault?subject=unsorted"),
+    },
+    { separator: true },
+    {
+      label: "All files",
+      icon: "fa-layer-group",
+      current: listing === "all",
+      onSelect: () => router.push("/vault?view=all"),
+    },
+    { separator: true },
+    { label: "New folder", icon: "fa-plus", onSelect: () => setFolderModal("new") },
+  ];
 
   return (
     <div className="nm-page nm-page--vault">
       <div className="nm-page-head">
         <div className="nm-head-top">
-          {subjectId === "all" ? (
+          {renderHome || showResults ? (
             <span className="nm-eyebrow">
               Notes · <span className="nm-mono">{notes.length} items</span>
             </span>
@@ -168,7 +224,17 @@ export default function VaultPage() {
                 Notes
               </Link>
               <span aria-hidden="true"> / </span>
-              <span>{folderName}</span>
+              <button
+                type="button"
+                className="nm-crumb-btn"
+                aria-haspopup="menu"
+                aria-expanded={switcher !== null}
+                title="Switch folder"
+                onClick={openSwitcher}
+              >
+                {folderName}
+                <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+              </button>
             </nav>
           )}
         </div>
@@ -192,113 +258,53 @@ export default function VaultPage() {
         </p>
       </div>
 
-      <div className="nm-vault-layout">
-        <aside className="nm-vault-side">
-          <nav className="nm-vault-nav" aria-label="Subjects">
-            <Link
-              className={`nm-folders${subjectId === "all" ? " is-active" : ""}`}
-              href="/vault"
-              aria-current={subjectId === "all" ? "page" : undefined}
-            >
-              <i className="fa-solid fa-layer-group" aria-hidden="true" />
-              <span>All notes</span>
-              <span className="nm-mono nm-folder-count">{notes.length}</span>
-            </Link>
-            {store.subjects.map((subject) => {
-              const count = notes.filter((note) => note.subjectId === subject.id).length;
-              return (
-                <div className={`nm-folderrow${subjectId === subject.id ? " is-active" : ""}`} key={subject.id}>
-                  <Link
-                    className={`nm-folders${subjectId === subject.id ? " is-active" : ""}`}
-                    href={`/vault?subject=${subject.id}`}
-                    title={subject.name}
-                    aria-current={subjectId === subject.id ? "page" : undefined}
-                  >
-                    <span className={`nm-dot nm-mk-${subject.color}`} />
-                    <span>{subject.name}</span>
-                    <span className="nm-mono nm-folder-count">{count}</span>
-                  </Link>
-                  <button
-                    type="button"
-                    className="nm-iconbtn nm-iconbtn--sm"
-                    aria-label="Subject options"
-                    title="Subject options"
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      setSubjectMenu({
-                        id: subject.id,
-                        left: Math.max(12, Math.min(rect.left, window.innerWidth - 200)),
-                        top: Math.min(rect.bottom + 6, window.innerHeight - 200),
-                      });
-                    }}
-                  >
-                    <i className="fa-solid fa-ellipsis" aria-hidden="true" />
-                  </button>
-                </div>
-              );
-            })}
-            <Link
-              className={`nm-folders${subjectId === "unsorted" ? " is-active" : ""}`}
-              href="/vault?subject=unsorted"
-              aria-current={subjectId === "unsorted" ? "page" : undefined}
-            >
-              <i className="fa-solid fa-inbox" aria-hidden="true" />
-              <span>Unsorted</span>
-              <span className="nm-mono nm-folder-count">{unsortedCount}</span>
-            </Link>
-            <button type="button" className="nm-folders nm-folders--add" onClick={() => setSubjectModal("new")}>
-              <i className="fa-solid fa-plus" aria-hidden="true" />
-              <span>New subject</span>
-            </button>
-          </nav>
-        </aside>
-
-        <div className="nm-vault-main">
-          <div className="nm-vault-toolbar">
-            <div className="nm-search">
-              <i className="fa-solid fa-magnifying-glass nm-search-icon" aria-hidden="true" />
-              <input
-                className="nm-input nm-search-input"
-                placeholder="Search titles, notes and tags…"
-                aria-label="Search notes"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
+      <div className="nm-vault-main">
+        <div className="nm-vault-toolbar">
+          <div className="nm-search">
+            <i className="fa-solid fa-magnifying-glass nm-search-icon" aria-hidden="true" />
+            <input
+              className="nm-input nm-search-input"
+              placeholder={renderHome ? "Search everything…" : "Search titles, notes and tags…"}
+              aria-label="Search notes"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setRemote(null);
+              }}
+            />
+            {query ? (
+              <button
+                type="button"
+                className="nm-search-clear"
+                aria-label="Clear search"
+                onClick={() => {
+                  setQuery("");
                   setRemote(null);
                 }}
-              />
-              {query ? (
-                <button
-                  type="button"
-                  className="nm-search-clear"
-                  aria-label="Clear search"
-                  onClick={() => {
-                    setQuery("");
-                    setRemote(null);
-                  }}
-                >
-                  <i className="fa-solid fa-xmark" aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-            {query.trim() ? (
-              remote === null ? (
-                <button
-                  type="button"
-                  className="nm-btn nm-btn--secondary nm-btn--sm"
-                  disabled={searching}
-                  onClick={() => void searchInsideFiles()}
-                >
-                  <i className="fa-solid fa-magnifying-glass-plus" aria-hidden="true" />
-                  {searching ? "Searching…" : "Search inside files"}
-                </button>
-              ) : (
-                <button type="button" className="nm-btn nm-btn--ghost nm-btn--sm" onClick={() => setRemote(null)}>
-                  <i className="fa-solid fa-xmark" aria-hidden="true" />
-                  File results · clear
-                </button>
-              )
+              >
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
             ) : null}
+          </div>
+          {searchingNow ? (
+            remote === null ? (
+              <button
+                type="button"
+                className="nm-btn nm-btn--secondary nm-btn--sm"
+                disabled={searching}
+                onClick={() => void searchInsideFiles()}
+              >
+                <i className="fa-solid fa-magnifying-glass-plus" aria-hidden="true" />
+                {searching ? "Searching…" : "Search inside files"}
+              </button>
+            ) : (
+              <button type="button" className="nm-btn nm-btn--ghost nm-btn--sm" onClick={() => setRemote(null)}>
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+                File results · clear
+              </button>
+            )
+          ) : null}
+          {renderHome ? null : (
             <div className="nm-viewtoggle" role="group" aria-label="Layout">
               {(["list", "grid"] as VaultView[]).map((item) => (
                 <button
@@ -314,8 +320,10 @@ export default function VaultPage() {
                 </button>
               ))}
             </div>
-          </div>
+          )}
+        </div>
 
+        {listing === "home" ? null : (
           <div className="nm-seg nm-vault-filters" role="tablist" aria-label="Filter notes">
             {FILTERS.map((item) => (
               <button
@@ -332,81 +340,109 @@ export default function VaultPage() {
               </button>
             ))}
           </div>
+        )}
 
-          <div className="nm-vault-head">
-            <h2 className="nm-section-title">
-              {selectedSubject ? (
-                <span className={`nm-dot nm-mk-${selectedSubject.color}`} aria-hidden="true" />
-              ) : subjectId === "unsorted" ? (
-                <i className="fa-solid fa-inbox" aria-hidden="true" />
-              ) : null}
-              {folderName}
-            </h2>
-            <span className="nm-mono nm-meta">
-              {visible.length} item{visible.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          {visible.length === 0 ? (
-            <EmptyState
-              icon={query ? "fa-magnifying-glass" : subjectId === "unsorted" ? "fa-inbox" : "fa-note-sticky"}
-              title={
-                query
-                  ? `No matches for “${query}”`
-                  : selectedSubject
-                    ? `Nothing in ${selectedSubject.name} yet`
-                    : subjectId === "unsorted"
-                      ? "Nothing unsorted"
-                      : filter !== "all"
-                        ? `No ${FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} here yet`
-                        : "No notes here yet"
-              }
-              body={
-                query || filter !== "all"
-                  ? "Try a tag, a subject name, or a word from the notes."
-                  : subjectId === "unsorted"
-                    ? "Anything you add without picking a subject lands here."
-                    : "Write a note, photograph your handwriting, or drop in a slide deck or past paper."
-              }
-              action={
-                filtering ? (
-                  <button
-                    type="button"
-                    className="nm-btn nm-btn--secondary"
-                    onClick={() => {
-                      setQuery("");
-                      setFilter("all");
-                      setRemote(null);
-                    }}
-                  >
-                    Clear search and filters
-                  </button>
+        {renderHome ? (
+          <VaultHome
+            notes={notes}
+            onOpenNote={openNote}
+            onNewFolder={() => setFolderModal("new")}
+            onSubjectMenu={openFolderMenu}
+            onAdd={() => setAdding(true)}
+          />
+        ) : (
+          <>
+            <div className="nm-vault-head">
+              <h2 className="nm-section-title">
+                {showResults ? (
+                  <>Results for “{query.trim()}”</>
                 ) : (
-                  <button type="button" className="nm-btn nm-btn--primary" onClick={() => setAdding(true)}>
-                    Add something
-                  </button>
-                )
-              }
-            />
-          ) : effectiveView === "grid" ? (
-            <div className="nm-notegrid">
-              {visible.map((note) => (
-                <NoteCard key={note.id} note={note} onOpen={openNote} />
-              ))}
+                  <>
+                    {listing === "folder" && selectedFolder ? (
+                      <span className={`nm-vault-folder-glyph nm-mk-${selectedFolder.color}`}>
+                        <FolderGlyph />
+                      </span>
+                    ) : listing === "unsorted" ? (
+                      <i className="fa-solid fa-inbox" aria-hidden="true" />
+                    ) : (
+                      <i className="fa-solid fa-layer-group" aria-hidden="true" />
+                    )}
+                    {folderName}
+                  </>
+                )}
+              </h2>
+              <span className="nm-mono nm-meta">
+                {visible.length} item{visible.length === 1 ? "" : "s"}
+              </span>
             </div>
-          ) : (
-            <div className="nm-notelist">
-              {visible.map((note) => (
-                <NoteRow key={note.id} note={note} onOpen={openNote} />
-              ))}
-            </div>
-          )}
-        </div>
+
+            {visible.length === 0 ? (
+              <EmptyState
+                icon={searchingNow ? "fa-magnifying-glass" : listing === "unsorted" ? "fa-inbox" : "fa-note-sticky"}
+                title={
+                  searchingNow
+                    ? `No matches for “${query.trim()}”`
+                    : listing === "folder"
+                      ? `Nothing in ${folderName} yet`
+                      : listing === "unsorted"
+                        ? "Nothing unsorted"
+                        : activeFilter !== "all"
+                          ? `No ${FILTERS.find((item) => item.id === activeFilter)?.label.toLowerCase()} here yet`
+                          : "No notes here yet"
+                }
+                body={
+                  searchingNow || activeFilter !== "all"
+                    ? "Try a tag, a folder name, or a word from the notes."
+                    : listing === "unsorted"
+                      ? "Anything you add without picking a folder lands here."
+                      : "Write a note, photograph your handwriting, or drop in a slide deck or past paper."
+                }
+                action={
+                  filtering ? (
+                    <button
+                      type="button"
+                      className="nm-btn nm-btn--secondary"
+                      onClick={() => {
+                        setQuery("");
+                        setFilter("all");
+                        setRemote(null);
+                      }}
+                    >
+                      Clear search and filters
+                    </button>
+                  ) : (
+                    <button type="button" className="nm-btn nm-btn--primary" onClick={() => setAdding(true)}>
+                      Add something
+                    </button>
+                  )
+                }
+              />
+            ) : showResults ? (
+              <div className="nm-notelist">
+                {visible.map((note) => (
+                  <NoteRow key={note.id} note={note} onOpen={openNote} />
+                ))}
+              </div>
+            ) : effectiveView === "grid" ? (
+              <div className="nm-notegrid">
+                {visible.map((note) => (
+                  <NoteCard key={note.id} note={note} onOpen={openNote} />
+                ))}
+              </div>
+            ) : (
+              <div className="nm-notelist">
+                {visible.map((note) => (
+                  <NoteRow key={note.id} note={note} onOpen={openNote} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {adding ? (
         <AddItemModal
-          defaultSubjectId={subjectId === "all" ? undefined : subjectId === "unsorted" ? null : subjectId}
+          defaultSubjectId={listing === "folder" && subjectId ? subjectId : listing === "unsorted" ? null : undefined}
           onClose={() => setAdding(false)}
           onCreated={(id) => router.push(`/vault/${id}`)}
         />
@@ -414,71 +450,80 @@ export default function VaultPage() {
 
       {dashboard ? <StudyDashboard onClose={() => setDashboard(false)} /> : null}
 
-      {subjectModal === "new" ? (
+      {folderModal === "new" ? (
         <Modal
-          title="New subject"
+          title="New folder"
           size="sm"
-          onClose={() => setSubjectModal(null)}
+          onClose={() => setFolderModal(null)}
           footer={
             <>
               <div className="nm-spacer" />
-              <button type="button" className="nm-btn nm-btn--ghost" onClick={() => setSubjectModal(null)}>
+              <button type="button" className="nm-btn nm-btn--ghost" onClick={() => setFolderModal(null)}>
                 Cancel
               </button>
-              <button type="button" className="nm-btn nm-btn--primary" onClick={() => void createSubject()}>
-                Create subject
+              <button type="button" className="nm-btn nm-btn--primary" onClick={() => void createFolder()}>
+                Create folder
               </button>
             </>
           }
         >
-          <label className="nm-label" htmlFor="subject-name">
-            Subject name
+          <label className="nm-label" htmlFor="folder-name">
+            Folder name
           </label>
           <input
-            id="subject-name"
+            id="folder-name"
             className="nm-input"
             placeholder="e.g. Thermodynamics"
-            value={subjectName}
-            onChange={(event) => setSubjectName(event.target.value)}
+            value={folderDraft}
+            onChange={(event) => setFolderDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") void createSubject();
+              if (event.key === "Enter") void createFolder();
             }}
           />
         </Modal>
       ) : null}
 
-      {subjectMenu ? (
+      {folderMenu ? (
         <Menu
-          label="Subject options"
-          onClose={() => setSubjectMenu(null)}
-          style={{ position: "fixed", left: subjectMenu.left, top: subjectMenu.top }}
+          label="Folder options"
+          onClose={() => setFolderMenu(null)}
+          style={{ position: "fixed", left: folderMenu.left, top: folderMenu.top }}
           items={[
             {
               label: "Rename",
               icon: "fa-pen",
               onSelect: () => {
-                const subject = store.subjectById(subjectMenu.id);
-                if (subject) void renameSubject(subject.id, subject.name);
+                const subject = store.subjectById(folderMenu.id);
+                if (subject) void renameFolder(subject.id, subject.name);
               },
             },
-            { label: "Delete", icon: "fa-trash", danger: true, onSelect: () => setDeleteSubject(subjectMenu.id) },
+            { label: "Delete", icon: "fa-trash", danger: true, onSelect: () => setDeleteFolder(folderMenu.id) },
           ]}
         />
       ) : null}
 
-      {deleteSubject ? (
+      {switcher ? (
+        <Menu
+          label="Switch folder"
+          onClose={() => setSwitcher(null)}
+          style={{ position: "fixed", left: switcher.left, top: switcher.top }}
+          items={switcherItems}
+        />
+      ) : null}
+
+      {deleteFolder ? (
         <Modal
-          title={`Delete “${store.subjectById(deleteSubject)?.name ?? "subject"}”?`}
+          title={`Delete “${store.subjectById(deleteFolder)?.name ?? "folder"}”?`}
           size="sm"
-          onClose={() => setDeleteSubject(null)}
+          onClose={() => setDeleteFolder(null)}
           footer={
             <>
               <div className="nm-spacer" />
-              <button type="button" className="nm-btn nm-btn--ghost" onClick={() => setDeleteSubject(null)}>
+              <button type="button" className="nm-btn nm-btn--ghost" onClick={() => setDeleteFolder(null)}>
                 Cancel
               </button>
-              <button type="button" className="nm-btn nm-btn--danger" onClick={() => void removeSubject()}>
-                Delete subject
+              <button type="button" className="nm-btn nm-btn--danger" onClick={() => void removeFolder()}>
+                Delete folder
               </button>
             </>
           }
@@ -493,9 +538,9 @@ export default function VaultPage() {
             value={moveTo}
             onChange={(event) => setMoveTo(event.target.value)}
           >
-            <option value="">No subject</option>
+            <option value="">No folder</option>
             {store.subjects
-              .filter((subject) => subject.id !== deleteSubject)
+              .filter((subject) => subject.id !== deleteFolder)
               .map((subject) => (
                 <option key={subject.id} value={subject.id}>
                   {subject.name}

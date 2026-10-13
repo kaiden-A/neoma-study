@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session as DbSession
 
 from ..config import Settings, get_settings
@@ -161,6 +162,26 @@ def file_url(
     record = file_services.require_visible_file(db, user, file_id)
     key = record.thumb_key if thumb and record.thumb_key else record.key
     return FileUrlOut(url=storage.presigned_get(key))
+
+
+@router.get("/{file_id}/raw")
+def file_raw(
+    file_id: uuid.UUID,
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+) -> RedirectResponse:
+    """Stable URL for inline note images; bounces to a fresh presigned GET.
+
+    Presigned URLs expire after minutes, so note bodies can only ever store
+    `/api/files/<id>/raw` and the redirect mints a new one on every load.
+    """
+    record = file_services.require_visible_file(db, user, file_id)
+    return RedirectResponse(
+        storage.presigned_get(record.key),
+        status_code=307,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/{file_id}/text", response_model=FileTextOut)

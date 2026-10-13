@@ -321,14 +321,14 @@ export function AddItemModal({
       ) : null}
 
       <div className="nm-form-grid">
-        <Field label="Subject" htmlFor="ai-folder">
+        <Field label="Folder" htmlFor="ai-folder">
           <select
             id="ai-folder"
             className="nm-select"
             value={subjectId}
             onChange={(event) => setSubjectId(event.target.value)}
           >
-            <option value="">No subject</option>
+            <option value="">No folder</option>
             {store.subjects.map((subject) => (
               <option key={subject.id} value={subject.id}>
                 {subject.name}

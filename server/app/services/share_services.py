@@ -18,7 +18,7 @@ from ..config import get_settings
 from ..models import FileObject, Note, NoteScope, NoteShare, User
 from ..schemas.notes import FileUrlOut, NoteShareOut, PublicFileMeta, PublicNoteOut
 from ..utils import to_ms
-from . import note_services, storage_services
+from . import file_services, note_services, storage_services
 from .errors import NotFoundError
 
 MISSING_NOTE = "That item is gone."
@@ -108,5 +108,19 @@ def public_file(db: DbSession, token: str, storage: storage_services.Storage) ->
     _share, note = _share_note(db, token)
     file = db.get(FileObject, note.file_id) if note.file_id else None
     if file is None:
+        raise NotFoundError(MISSING_FILE)
+    return FileUrlOut(url=storage.presigned_get(file.key))
+
+
+def public_inline_file(
+    db: DbSession, token: str, file_id: uuid.UUID, storage: storage_services.Storage
+) -> FileUrlOut:
+    """An inline image of a shared note. Only ids the note body references and
+    the note's owner uploaded; the token unlocks nothing else."""
+    _share, note = _share_note(db, token)
+    if file_id not in file_services.body_file_ids(note.body):
+        raise NotFoundError(MISSING_FILE)
+    file = db.get(FileObject, file_id)
+    if file is None or (note.owner_id is not None and file.owner_id != note.owner_id):
         raise NotFoundError(MISSING_FILE)
     return FileUrlOut(url=storage.presigned_get(file.key))

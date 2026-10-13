@@ -2,8 +2,9 @@
 
 Study OS: group projects (task boards), study groups (shared notes), personal
 notes, one calendar. Built from `master-plan.md`; read it before changing the
-core. `prototype/` is the frontend-only reference for behaviour and design —
-read it, don't edit it (source of truth for the look).
+core. `prototype/` is the frontend-only reference for behaviour — read it,
+don't edit it. (The notes home is an intentional evolution past its look: the
+folder grid in `components/notes/VaultHome.tsx`.)
 
 ## Commands
 
@@ -76,8 +77,9 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   `GET /api/bootstrap` loads everything and actions patch local state. Add a
   slice + actions there rather than fetching in pages.
 - `app/globals.css` is the prototype's design layer copied verbatim, plus Tailwind
-  `@theme` tokens and next/font wiring. Keep the look identical to `prototype/`;
-  port component classes rather than inventing new ones.
+  `@theme` tokens and next/font wiring. Keep the look identical to `prototype/`
+  (except the notes home's folder grid — the intentional redesign above); port
+  component classes rather than inventing new ones.
 - React Compiler lint is on: no `Date.now()` in render (use `lib/useNow.ts`), no
   synchronous `setState` in effects (lazy initializers or event handlers).
 - Store mutations are optimistic: `updateTask`/`deleteTask`/`postponeTask` and

@@ -19,8 +19,14 @@ function decodeHtml(value: string): string {
     .replace(/&amp;/g, "&");
 }
 
+// Inline note images use stable same-origin paths (`/api/files/<id>/raw`,
+// rewritten to a share-scoped path on public pages); everything else still
+// has to be a real http(s) URL.
+const APP_FILE_PATH = /^\/api\/(?:files|shares)\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/;
+
 function safeUrl(value: string): string | null {
   const raw = decodeHtml(value.trim());
+  if (APP_FILE_PATH.test(raw)) return raw;
   if (!/^https?:\/\//i.test(raw)) return null;
   try {
     const url = new URL(raw);

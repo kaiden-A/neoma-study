@@ -16,7 +16,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { fmtDateTime, fmtRelative } from "@/lib/dates";
 import { stripMarkdown } from "@/lib/markdown";
-import { parseTags } from "@/lib/files";
+import { MAX_FILE_BYTES, compressImage, parseTags } from "@/lib/files";
 import { parseVideoUrl, videoThumbUrl } from "@/lib/links";
 import { noteType } from "@/lib/markers";
 import { formatClock, parsePageMarks, parseTimeMarks } from "@/lib/study";
@@ -140,6 +140,31 @@ export function NoteEditor({ noteId }: { noteId: string }) {
       void store.updateNote(note.id, { study: { ...note.study, ...patch } }).catch(() => {});
     },
     [note, store],
+  );
+
+  // Pictures dropped or pasted into the body: compress in the browser, upload
+  // through the normal presign flow (group-scoped for group notes) and hand
+  // the editor a durable `/api/files/<id>/raw` src.
+  const uploadImageFile = useCallback(
+    async (file: File): Promise<string | null> => {
+      if (file.size > MAX_FILE_BYTES) {
+        toast("That picture is over 15 MB", {
+          kind: "danger",
+          body: "Try a smaller screenshot or resize it first.",
+        });
+        return null;
+      }
+      try {
+        const prepared = await compressImage(file);
+        const name = `${file.name.replace(/\.[^.]+$/, "") || "picture"}.jpg`;
+        const uploaded = await store.uploadFile(prepared.full, name, prepared.thumb, note?.groupId ?? null);
+        return `/api/files/${uploaded.id}/raw`;
+      } catch (caught) {
+        toast(caught instanceof Error ? caught.message : "Could not upload that picture.", { kind: "danger" });
+        return null;
+      }
+    },
+    [note, store, toast],
   );
 
   const handleVideoTime = useCallback((seconds: number) => {
@@ -627,10 +652,11 @@ export function NoteEditor({ noteId }: { noteId: string }) {
         initialMarkdown={note.body}
         placeholder="Write it out in your own words… Type / for headings, lists, tables and more."
         onChange={setBody}
+        uploadImage={uploadImageFile}
       />
       <p className="nm-help nm-writer-help">
-        Type <span className="nm-mono">/</span> for blocks, or select text for bold, italic and links.
-        Press Save changes when you are done.
+        Type <span className="nm-mono">/</span> for blocks, or select text for bold, italic and links. Drop or
+        paste a picture to add it to the note. Press Save changes when you are done.
       </p>
     </div>
   );

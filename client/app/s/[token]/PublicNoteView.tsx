@@ -15,6 +15,15 @@ const OFFICE_EXT = /\.(ppt|pptx|doc|docx|xls|xlsx|odt|ods|odp|rtf)$/i;
 const OFFICE_TYPE =
   /^(application\/(vnd\.(openxmlformats-officedocument|ms-)|msword|vnd\.oasis\.opendocument)|text\/rtf)/;
 
+/** Inline images point at `/api/files/<id>/raw`; an anonymous reader has no
+ * session, so the same ids are fetched through the share token instead. */
+function shareScopedBody(body: string, token: string): string {
+  return body.replace(
+    /\/api\/files\/([0-9a-fA-F-]{36})\/raw/g,
+    (_match, id: string) => `/api/shares/${encodeURIComponent(token)}/files/${id}/raw`,
+  );
+}
+
 /** The read-only public view at /s/[token]. Deliberately store-free: an
  * anonymous visitor fetches only the public share endpoints, so nothing here
  * can bounce them to /login. */
@@ -212,7 +221,10 @@ export function PublicNoteView({ token }: { token: string }) {
       {filePane}
 
       {note.body ? (
-        <article className="nm-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(note.body) }} />
+        <article
+          className="nm-md"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(shareScopedBody(note.body, token)) }}
+        />
       ) : null}
 
       <footer className="mt-8 border-t border-[var(--rule)] pt-4">

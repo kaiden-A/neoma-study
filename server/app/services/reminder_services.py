@@ -141,13 +141,17 @@ def purge_orphan_files(
     """
     moment = now or datetime.now(UTC)
     cutoff = moment - timedelta(hours=older_than_hours)
-    orphans = list(
-        db.scalars(
+    # Inline note images are referenced from bodies, not `notes.file_id`.
+    inline_refs = file_services.referenced_file_ids(db)
+    orphans = [
+        file
+        for file in db.scalars(
             select(FileObject)
             .where(FileObject.created_at <= cutoff)
             .where(~FileObject.id.in_(select(Note.file_id).where(Note.file_id.is_not(None))))
         )
-    )
+        if file.id not in inline_refs
+    ]
     if not dry_run:
         for file in orphans:
             file_services.purge_file(db, storage, file)

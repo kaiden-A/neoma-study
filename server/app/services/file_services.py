@@ -6,6 +6,7 @@ helpers so the rules live in exactly one place. Shared copies are separate rows
 with their own keys, so deleting either copy never affects the other.
 """
 
+import re
 import uuid
 from pathlib import Path
 
@@ -21,6 +22,34 @@ NOT_YOUR_GROUP_FILE = "That file is gone."
 
 TEXT_CONTENT_TYPES = ("text/", "application/json")
 MAX_TEXT_BYTES = 256 * 1024
+
+# Inline images live in the note body as `![alt](/api/files/<id>/raw)`; the
+# stable path is the only thing that may be persisted (presigned GETs expire).
+BODY_FILE_REF = re.compile(r"/api/files/([0-9a-fA-F-]{36})/raw")
+
+
+def body_file_ids(body: str | None) -> set[uuid.UUID]:
+    """The file ids a note body references as inline images."""
+    if not body:
+        return set()
+    ids: set[uuid.UUID] = set()
+    for match in BODY_FILE_REF.finditer(body):
+        try:
+            ids.add(uuid.UUID(match.group(1)))
+        except ValueError:
+            continue
+    return ids
+
+
+def referenced_file_ids(db: DbSession, *, exclude_note_id: uuid.UUID | None = None) -> set[uuid.UUID]:
+    """Every file id referenced inline by any note body."""
+    statement = select(Note.body)
+    if exclude_note_id is not None:
+        statement = statement.where(Note.id != exclude_note_id)
+    ids: set[uuid.UUID] = set()
+    for body in db.scalars(statement):
+        ids |= body_file_ids(body)
+    return ids
 
 
 def file_key(prefix: str, name: str) -> str:

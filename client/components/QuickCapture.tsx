@@ -133,7 +133,7 @@ export function QuickCapture({ onClose }: { onClose: () => void }) {
             File under
           </label>
           <select id="qc-folder" className="nm-select" value={subjectId} onChange={(event) => setSubjectId(event.target.value)}>
-            <option value="">No subject</option>
+            <option value="">No folder</option>
             {store.subjects.map((subject) => (
               <option key={subject.id} value={subject.id}>
                 {subject.name}

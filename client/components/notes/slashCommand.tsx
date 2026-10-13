@@ -1,4 +1,4 @@
-import { Extension } from "@tiptap/core";
+import { Extension, type Editor } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
 import {
   exitSuggestion,
@@ -9,12 +9,22 @@ import {
 } from "@tiptap/suggestion";
 
 import { SlashMenu, type SlashMenuHandle } from "@/components/notes/SlashMenu";
-import { SLASH_ITEMS, type SlashItem } from "@/components/notes/slashItems";
+import { buildSlashItems, type SlashItem } from "@/components/notes/slashItems";
 
-export const SlashCommand = Extension.create({
+export interface SlashCommandOptions {
+  /** Opens the editor's picture picker (the upload lives in RichTextEditor). */
+  onPickImage?: (editor: Editor) => void;
+}
+
+export const SlashCommand = Extension.create<SlashCommandOptions>({
   name: "slashCommand",
 
+  addOptions(): SlashCommandOptions {
+    return {};
+  },
+
   addProseMirrorPlugins() {
+    const items = buildSlashItems(this.options.onPickImage);
     return [
       Suggestion<SlashItem, SlashItem>({
         editor: this.editor,
@@ -22,8 +32,8 @@ export const SlashCommand = Extension.create({
         allowedPrefixes: null,
         items: ({ query }) => {
           const needle = query.trim().toLowerCase();
-          if (!needle) return SLASH_ITEMS;
-          return SLASH_ITEMS.filter((item) =>
+          if (!needle) return items;
+          return items.filter((item) =>
             `${item.label} ${item.keywords}`.toLowerCase().includes(needle),
           );
         },

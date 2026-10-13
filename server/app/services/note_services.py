@@ -282,6 +282,17 @@ def delete_note(db: DbSession, user: User, note_id: uuid.UUID, storage: storage_
         # attachment leaves with the note, for any member.
         if file is not None and (file.owner_id == user.id or file.group_id is not None):
             file_services.purge_attached_file(db, storage, file, note.id)
+    # Inline images live in the body; they go with the note unless another
+    # note still embeds them.
+    inline_ids = file_services.body_file_ids(note.body)
+    if inline_ids:
+        still_used = file_services.referenced_file_ids(db, exclude_note_id=note.id)
+        for file_id in inline_ids - still_used:
+            file = db.get(FileObject, file_id)
+            if file is None:
+                continue
+            if file.owner_id == user.id or file.group_id is not None:
+                file_services.purge_file(db, storage, file)
     db.delete(note)
     db.commit()
 
@@ -306,6 +317,16 @@ def share_to_group(
     body = note.body
     if note.type is NoteType.link and note.url:
         body = f"{body}\n\nLink: {note.url}".strip()
+    # Inline images are copied to group scope and the body rewritten, so every
+    # member can load them and the two notes stay independent (same rule the
+    # attachment copy follows).
+    inline_ids = file_services.body_file_ids(body)
+    for source_id in inline_ids:
+        source = db.get(FileObject, source_id)
+        if source is None or source.owner_id != user.id:
+            continue
+        copy_file = _copy_file_to_group(db, storage, group.id, source, user)
+        body = body.replace(f"/api/files/{source_id}/raw", f"/api/files/{copy_file.id}/raw")
     copy = Note(
         group_id=group.id,
         scope=NoteScope.group,

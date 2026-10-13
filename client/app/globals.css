@@ -1065,6 +1065,57 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-filterchips { display: flex; gap: 6px; flex-wrap: wrap; }
 .nm-vault-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .nm-vault-head .nm-meta { margin-left: auto; }
+.nm-vault-folder-glyph { display: inline-flex; color: var(--mk); }
+.nm-vault-folder-glyph svg { width: 22px; height: 18px; display: block; }
+
+/* Notes home: folder tiles first, then a capped suggestion. */
+.nm-home { display: flex; flex-direction: column; gap: 26px; margin-bottom: 14px; }
+.nm-home-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.nm-home-more { margin-left: auto; font-size: 0.82rem; color: var(--ink-muted); display: inline-flex; align-items: center; gap: 6px; }
+.nm-home-more:hover { color: var(--ink); }
+.nm-home-more i { font-size: 0.7rem; }
+.nm-foldergrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 14px; align-items: stretch; }
+.nm-foldercard {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.nm-foldercard:hover { border-color: var(--ink-muted); }
+.nm-foldercard-link { display: flex; flex-direction: column; gap: 5px; padding: 15px 16px 14px; }
+.nm-foldercard-glyph { color: var(--mk); }
+.nm-foldercard-glyph svg { display: block; width: 54px; height: 45px; }
+.nm-foldercard-name { font-weight: 600; font-size: 0.93rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nm-foldercard-meta { font-size: 0.78rem; color: var(--ink-muted); }
+.nm-foldercard-menu { position: absolute; top: 8px; right: 8px; opacity: 0; }
+.nm-foldercard:hover .nm-foldercard-menu, .nm-foldercard-menu:focus-visible { opacity: 1; }
+.nm-foldercard--add {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  padding: 15px 16px 14px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--ink-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.nm-foldercard--add:hover { color: var(--ink); border-color: var(--ink-muted); }
+.nm-foldercard--add .nm-foldercard-glyph--add {
+  display: grid; place-items: center;
+  width: 54px; height: 45px;
+  border: 1px dashed var(--rule); border-radius: 10px;
+  font-size: 0.95rem;
+}
+.nm-crumb-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0; border: 0; background: transparent;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+  cursor: pointer;
+}
+.nm-crumb-btn:hover { color: var(--ink); border-bottom: 1px solid var(--ink); }
+.nm-crumb-btn i { font-size: 0.58rem; color: var(--ink-muted); }
+.nm-menu-hint { margin-left: auto; color: var(--ink-muted); }
+.nm-menu-item.is-current { font-weight: 600; }
 
 /* ---------- 15. note page ---------- */
 .nm-note-top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -1361,6 +1412,10 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
   .nm-vault-nav { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
   .nm-folders { width: auto; white-space: nowrap; }
   .nm-folders span:nth-child(2) { flex: 0 0 auto; }
+  .nm-foldergrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .nm-foldercard-link, .nm-foldercard--add { padding: 13px 14px 12px; }
+  .nm-foldercard-glyph svg { width: 46px; height: 38px; }
+  .nm-foldercard-menu { opacity: 1; }
   .nm-board { grid-template-columns: repeat(3, 80%); overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x mandatory; }
   .nm-col { scroll-snap-align: start; }
   .nm-table-hd { display: none; }
@@ -1855,6 +1910,8 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 
 /* ---------- rich text editor ---------- */
 .nm-editor { display: flex; flex-direction: column; flex: 1 1 auto; }
+.nm-editor.is-drop-target { outline: 2px dashed var(--mark-amber); outline-offset: -6px; border-radius: var(--radius-card); }
+.nm-editor-uploading { display: flex; align-items: center; gap: 8px; margin: 8px 2px 0; font-size: 0.78rem; color: var(--ink-muted); }
 .nm-editor-body { flex: 1 1 auto; display: flex; flex-direction: column; }
 .nm-editor-content {
   flex: 1 1 auto; min-height: 300px;
@@ -2107,6 +2164,7 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 
 /* vault */
 .nm-skel-folder { border-radius: 9px; }
+.nm-skel-foldercard { border-radius: var(--radius-card); }
 .nm-skel-search { flex: 1 1 260px; }
 .nm-skel-seg { margin-bottom: 14px; border-radius: var(--radius-control); }
 .nm-skel-row {

@@ -5,6 +5,12 @@ import { useEffect, useRef } from "react";
 export interface MenuItem {
   label?: string;
   icon?: string;
+  /** Marker key; renders the colour dot instead of an icon. */
+  dot?: string;
+  /** Right-aligned mono counter (folder counts, etc.). */
+  hint?: string;
+  /** The item the current view is on. */
+  current?: boolean;
   header?: string;
   separator?: boolean;
   danger?: boolean;
@@ -63,15 +69,21 @@ export function Menu({
             key={item.label}
             type="button"
             role="menuitem"
-            className={`nm-menu-item${item.danger ? " is-danger" : ""}`}
+            className={`nm-menu-item${item.danger ? " is-danger" : ""}${item.current ? " is-current" : ""}`}
+            aria-current={item.current ? "true" : undefined}
             disabled={item.disabled}
             onClick={() => {
               onClose();
               item.onSelect?.();
             }}
           >
-            {item.icon ? <i className={`fa-solid ${item.icon}`} aria-hidden="true" /> : null}
+            {item.dot ? (
+              <span className={`nm-dot nm-mk-${item.dot}`} aria-hidden="true" />
+            ) : item.icon ? (
+              <i className={`fa-solid ${item.icon}`} aria-hidden="true" />
+            ) : null}
             <span>{item.label}</span>
+            {item.hint ? <span className="nm-mono nm-menu-hint">{item.hint}</span> : null}
           </button>
         );
       })}

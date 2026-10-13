@@ -1,11 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useSyncExternalStore } from "react";
 
 import { Skeleton, SkeletonStatus, SkeletonText } from "@/components/ui/Skeleton";
-import { useIsPhone } from "@/lib/useMediaQuery";
-import { getServerVaultView, getVaultView, subscribeVaultView } from "@/lib/vaultView";
 
 /** Route-shaped loading placeholders. Used by the AppShell gate during
  * bootstrap and by the `loading.tsx` files during client navigation, so the
@@ -55,22 +52,6 @@ function CardSkeleton({ lines = 2, heading = true }: { lines?: number; heading?:
 
 /* ---------- vault ---------- */
 
-function VaultRows({ count = 5 }: { count?: number }) {
-  return (
-    <div className="nm-notelist">
-      {Array.from({ length: count }, (_, index) => (
-        <div className="nm-skel-row" key={index}>
-          <Skeleton className="nm-skel-thumb" />
-          <span className="nm-skel-row-bd">
-            <Skeleton width={`${Math.max(34, 66 - index * 7)}%`} height="14px" />
-            <Skeleton width={`${Math.max(20, 42 - index * 4)}%`} height="10px" />
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function VaultGrid({ count = 6 }: { count?: number }) {
   return (
     <div className="nm-notegrid">
@@ -89,31 +70,31 @@ function VaultGrid({ count = 6 }: { count?: number }) {
 }
 
 export function VaultSkeleton() {
-  const view = useSyncExternalStore(subscribeVaultView, getVaultView, getServerVaultView);
-  const isPhone = useIsPhone();
-  const shape = isPhone ? "list" : view;
   return (
     <div className="nm-page nm-page--vault">
       <Head titleWidth="284px" actionWidths={["104px"]} />
-      <div className="nm-vault-layout">
-        <aside className="nm-vault-side">
-          <nav className="nm-vault-nav">
-            {[0, 1, 2, 3].map((index) => (
-              <Skeleton key={index} className="nm-skel-folder" height="34px" />
-            ))}
-          </nav>
-        </aside>
-        <div className="nm-vault-main">
-          <div className="nm-vault-toolbar">
-            <Skeleton className="nm-skel-search" height="37px" />
-            <Skeleton width="76px" height="37px" />
-          </div>
-          <Skeleton className="nm-skel-seg" height="36px" />
-          <div className="nm-vault-head">
-            <Skeleton width="184px" height="20px" />
-            <Skeleton className="ml-auto" width="58px" height="12px" />
-          </div>
-          {shape === "grid" ? <VaultGrid /> : <VaultRows />}
+      <div className="nm-vault-main">
+        <div className="nm-vault-toolbar">
+          <Skeleton className="nm-skel-search" height="37px" />
+          <Skeleton width="76px" height="37px" />
+        </div>
+        <div className="nm-home">
+          <section className="nm-home-section">
+            <div className="nm-home-head">
+              <Skeleton width="96px" height="19px" />
+            </div>
+            <div className="nm-foldergrid">
+              {[0, 1, 2, 3].map((index) => (
+                <Skeleton key={index} className="nm-skel-foldercard" height="124px" />
+              ))}
+            </div>
+          </section>
+          <section className="nm-home-section">
+            <div className="nm-home-head">
+              <Skeleton width="168px" height="19px" />
+            </div>
+            <VaultGrid count={3} />
+          </section>
         </div>
       </div>
     </div>
