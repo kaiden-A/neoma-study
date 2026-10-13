@@ -35,7 +35,9 @@ export function AddItemModal({
   const [mode, setMode] = useState<Mode>("note");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [subjectId, setSubjectId] = useState(defaultSubjectId ?? store.subjects[0]?.id ?? "");
+  const [subjectId, setSubjectId] = useState(
+    defaultSubjectId === undefined ? (store.subjects[0]?.id ?? "") : (defaultSubjectId ?? ""),
+  );
   const [tags, setTags] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);

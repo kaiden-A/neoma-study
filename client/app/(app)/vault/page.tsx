@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { AddItemModal } from "@/components/notes/AddItemModal";
@@ -30,8 +31,18 @@ const FILE_TYPES = new Set(["handwritten", "slides", "paper"]);
 export default function VaultPage() {
   const store = useStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast, prompt } = useOverlays();
-  const [subjectId, setSubjectId] = useState<string>("all");
+  // The open folder lives in the URL so Back, refresh and shared links keep
+  // it: /vault = All notes, ?subject=unsorted = the no-subject bucket,
+  // ?subject=<id> = that subject. Stale ids fall back to All notes.
+  const folderParam = searchParams.get("subject");
+  const subjectId =
+    folderParam === "unsorted"
+      ? "unsorted"
+      : folderParam && store.subjects.some((subject) => subject.id === folderParam)
+        ? folderParam
+        : "all";
   const [filter, setFilter] = useState<FilterId>("all");
   const [query, setQuery] = useState("");
   const [remote, setRemote] = useState<Note[] | null>(null);
@@ -56,7 +67,11 @@ export default function VaultPage() {
     // "Search inside files" run lands; the subject/type filters still apply.
     const source = remote ?? notes;
     return source
-      .filter((note) => (subjectId === "all" ? true : note.subjectId === subjectId))
+      .filter((note) => {
+        if (subjectId === "all") return true;
+        if (subjectId === "unsorted") return note.subjectId === null;
+        return note.subjectId === subjectId;
+      })
       .filter((note) => {
         if (filter === "notes") return note.type === "note";
         if (filter === "files") return FILE_TYPES.has(note.type);
@@ -77,14 +92,28 @@ export default function VaultPage() {
       });
   }, [notes, remote, subjectId, filter, query]);
 
+  // The filter counts describe the open folder, not the whole vault.
+  const folderNotes = useMemo(
+    () =>
+      subjectId === "all"
+        ? notes
+        : notes.filter((note) =>
+            subjectId === "unsorted" ? note.subjectId === null : note.subjectId === subjectId,
+          ),
+    [notes, subjectId],
+  );
+
   const counts = {
-    all: notes.length,
-    notes: notes.filter((note) => note.type === "note").length,
-    files: notes.filter((note) => FILE_TYPES.has(note.type)).length,
-    links: notes.filter((note) => note.type === "link").length,
+    all: folderNotes.length,
+    notes: folderNotes.filter((note) => note.type === "note").length,
+    files: folderNotes.filter((note) => FILE_TYPES.has(note.type)).length,
+    links: folderNotes.filter((note) => note.type === "link").length,
   };
 
   const selectedSubject = subjectId === "all" ? null : store.subjectById(subjectId);
+  const unsortedCount = notes.filter((note) => note.subjectId === null).length;
+  const folderName =
+    subjectId === "all" ? "All notes" : subjectId === "unsorted" ? "Unsorted" : (selectedSubject?.name ?? "All notes");
   const filtering = Boolean(query.trim()) || filter !== "all";
 
   function openNote(note: Note) {
@@ -119,7 +148,7 @@ export default function VaultPage() {
   async function removeSubject() {
     if (!deleteSubject) return;
     await store.deleteSubject(deleteSubject, moveTo || null);
-    if (subjectId === deleteSubject) setSubjectId("all");
+    if (subjectId === deleteSubject) router.replace("/vault");
     setDeleteSubject(null);
     setMoveTo("");
     toast("Subject deleted", { kind: "info" });
@@ -129,9 +158,19 @@ export default function VaultPage() {
     <div className="nm-page nm-page--vault">
       <div className="nm-page-head">
         <div className="nm-head-top">
-          <span className="nm-eyebrow">
-            Notes · <span className="nm-mono">{notes.length} items</span>
-          </span>
+          {subjectId === "all" ? (
+            <span className="nm-eyebrow">
+              Notes · <span className="nm-mono">{notes.length} items</span>
+            </span>
+          ) : (
+            <nav className="nm-eyebrow" aria-label="Breadcrumb">
+              <Link className="nm-link" href="/vault">
+                Notes
+              </Link>
+              <span aria-hidden="true"> / </span>
+              <span>{folderName}</span>
+            </nav>
+          )}
         </div>
         <div className="nm-head-row">
           <h1 className="nm-title" id="page-title" tabIndex={-1}>
@@ -156,29 +195,29 @@ export default function VaultPage() {
       <div className="nm-vault-layout">
         <aside className="nm-vault-side">
           <nav className="nm-vault-nav" aria-label="Subjects">
-            <button
-              type="button"
+            <Link
               className={`nm-folders${subjectId === "all" ? " is-active" : ""}`}
-              onClick={() => setSubjectId("all")}
+              href="/vault"
+              aria-current={subjectId === "all" ? "page" : undefined}
             >
               <i className="fa-solid fa-layer-group" aria-hidden="true" />
               <span>All notes</span>
               <span className="nm-mono nm-folder-count">{notes.length}</span>
-            </button>
+            </Link>
             {store.subjects.map((subject) => {
               const count = notes.filter((note) => note.subjectId === subject.id).length;
               return (
                 <div className={`nm-folderrow${subjectId === subject.id ? " is-active" : ""}`} key={subject.id}>
-                  <button
-                    type="button"
+                  <Link
                     className={`nm-folders${subjectId === subject.id ? " is-active" : ""}`}
+                    href={`/vault?subject=${subject.id}`}
                     title={subject.name}
-                    onClick={() => setSubjectId(subject.id)}
+                    aria-current={subjectId === subject.id ? "page" : undefined}
                   >
                     <span className={`nm-dot nm-mk-${subject.color}`} />
                     <span>{subject.name}</span>
                     <span className="nm-mono nm-folder-count">{count}</span>
-                  </button>
+                  </Link>
                   <button
                     type="button"
                     className="nm-iconbtn nm-iconbtn--sm"
@@ -198,6 +237,15 @@ export default function VaultPage() {
                 </div>
               );
             })}
+            <Link
+              className={`nm-folders${subjectId === "unsorted" ? " is-active" : ""}`}
+              href="/vault?subject=unsorted"
+              aria-current={subjectId === "unsorted" ? "page" : undefined}
+            >
+              <i className="fa-solid fa-inbox" aria-hidden="true" />
+              <span>Unsorted</span>
+              <span className="nm-mono nm-folder-count">{unsortedCount}</span>
+            </Link>
             <button type="button" className="nm-folders nm-folders--add" onClick={() => setSubjectModal("new")}>
               <i className="fa-solid fa-plus" aria-hidden="true" />
               <span>New subject</span>
@@ -286,7 +334,14 @@ export default function VaultPage() {
           </div>
 
           <div className="nm-vault-head">
-            <h2 className="nm-section-title">{selectedSubject?.name ?? "All notes"}</h2>
+            <h2 className="nm-section-title">
+              {selectedSubject ? (
+                <span className={`nm-dot nm-mk-${selectedSubject.color}`} aria-hidden="true" />
+              ) : subjectId === "unsorted" ? (
+                <i className="fa-solid fa-inbox" aria-hidden="true" />
+              ) : null}
+              {folderName}
+            </h2>
             <span className="nm-mono nm-meta">
               {visible.length} item{visible.length === 1 ? "" : "s"}
             </span>
@@ -294,20 +349,24 @@ export default function VaultPage() {
 
           {visible.length === 0 ? (
             <EmptyState
-              icon={query ? "fa-magnifying-glass" : "fa-note-sticky"}
+              icon={query ? "fa-magnifying-glass" : subjectId === "unsorted" ? "fa-inbox" : "fa-note-sticky"}
               title={
                 query
                   ? `No matches for “${query}”`
                   : selectedSubject
                     ? `Nothing in ${selectedSubject.name} yet`
-                    : filter !== "all"
-                      ? `No ${FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} here yet`
-                      : "No notes here yet"
+                    : subjectId === "unsorted"
+                      ? "Nothing unsorted"
+                      : filter !== "all"
+                        ? `No ${FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} here yet`
+                        : "No notes here yet"
               }
               body={
                 query || filter !== "all"
                   ? "Try a tag, a subject name, or a word from the notes."
-                  : "Write a note, photograph your handwriting, or drop in a slide deck or past paper."
+                  : subjectId === "unsorted"
+                    ? "Anything you add without picking a subject lands here."
+                    : "Write a note, photograph your handwriting, or drop in a slide deck or past paper."
               }
               action={
                 filtering ? (
@@ -347,7 +406,7 @@ export default function VaultPage() {
 
       {adding ? (
         <AddItemModal
-          defaultSubjectId={subjectId === "all" ? null : subjectId}
+          defaultSubjectId={subjectId === "all" ? undefined : subjectId === "unsorted" ? null : subjectId}
           onClose={() => setAdding(false)}
           onCreated={(id) => router.push(`/vault/${id}`)}
         />

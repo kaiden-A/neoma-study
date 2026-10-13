@@ -243,8 +243,31 @@ export function NoteEditor({ noteId }: { noteId: string }) {
     };
   }, [dirty]);
 
+  // Back always returns to where the item lives — its subject folder, or the
+  // group's Notes tab — no matter which surface opened the editor.
+  const group = note?.groupId ? store.groupById(note.groupId) : null;
+  const backSubject = note?.subjectId ? store.subjectById(note.subjectId) : null;
+  const backHref = !note
+    ? "/vault"
+    : group
+      ? `/groups/${group.id}?tab=notes`
+      : backSubject
+        ? `/vault?subject=${backSubject.id}`
+        : note.subjectId
+          ? "/vault"
+          : "/vault?subject=unsorted";
+  const backLabel = !note
+    ? "Notes"
+    : group
+      ? group.name
+      : backSubject
+        ? backSubject.name
+        : note.subjectId
+          ? "Notes"
+          : "Unsorted";
+
   const actions = useNoteActions(note, {
-    onDelete: () => router.push(note?.groupId ? `/groups/${note.groupId}?tab=notes` : "/vault"),
+    onDelete: () => router.push(backHref),
   });
 
   if (!note) {
@@ -267,7 +290,6 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   }
 
   const type = noteType(note.type);
-  const group = note.groupId ? store.groupById(note.groupId) : null;
   const subject = subjectId ? store.subjectById(subjectId) : null;
   const isFile = Boolean(note.fileId);
   const plainBody = stripMarkdown(body).trim();
@@ -737,9 +759,9 @@ export function NoteEditor({ noteId }: { noteId: string }) {
       {actions.overlays}
 
       <div className="nm-note-top">
-        <Link className="nm-backlink" href="/vault">
+        <Link className="nm-backlink" href={backHref}>
           <i className="fa-solid fa-arrow-left" aria-hidden="true" />
-          Notes
+          {backLabel}
         </Link>
         <span
           className={`nm-savestate nm-mono${dirty ? " is-dirty" : ""}${saveState === "saved" ? " is-saved" : ""}`}
