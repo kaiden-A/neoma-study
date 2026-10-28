@@ -25,9 +25,10 @@ assert settings.db_schema != SCHEMA, "refusing to run tests against the live sch
 
 
 def _connect_args() -> dict:
+    args: dict = {"timeout": 10}
     if settings.ssl_required:
-        return {"ssl_context": ssl.create_default_context()}
-    return {}
+        args["ssl_context"] = ssl.create_default_context()
+    return args
 
 
 # schema_translate_map instead of SET search_path on purpose: session state is

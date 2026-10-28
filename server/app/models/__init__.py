@@ -11,6 +11,7 @@ from .enums import (
 from .events import Event
 from .google import GoogleAccount
 from .groups import EmailLog, Group, GroupLink, GroupMember, GroupTopic, NotificationState
+from .moodle import MoodleAccount, MoodleAssignment, MoodleCourse
 from .notes import FileObject, Note, NoteShare, Subject
 from .sessions import Session
 from .study import Flashcard, StudySession
@@ -30,6 +31,9 @@ __all__ = [
     "GroupMember",
     "GroupRole",
     "GroupTopic",
+    "MoodleAccount",
+    "MoodleAssignment",
+    "MoodleCourse",
     "Note",
     "NoteScope",
     "NoteShare",

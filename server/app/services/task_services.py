@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..models import GroupMember, Task, TaskAssignee, TaskLink, TaskStatus, TaskSubtask, User
 from ..schemas.tasks import SubtaskIn, SubtaskOut, TaskCreate, TaskLinkIn, TaskLinkOut, TaskOut, TaskPatch
 from ..utils import from_ms, to_ms
-from . import access, email_services, google_services
+from . import access, email_services, google_services, moodle_services
 from .errors import InvalidError, NotFoundError
 
 MISSING_TASK = "We could not find that task."
@@ -60,6 +60,8 @@ def task_out(task: Task) -> TaskOut:
             TaskLinkOut(id=str(row.id), label=row.label, url=row.url)
             for row in sorted(task.links, key=lambda item: item.position)
         ],
+        courseId=str(task.course_id) if task.course_id else None,
+        moodle=bool(task.external_uid),
     )
 
 
@@ -215,6 +217,20 @@ def update_task(db: DbSession, user: User, task_id: uuid.UUID, patch: TaskPatch)
     if "links" in fields and patch.links is not None:
         _apply_links(task, patch.links)
 
+    # Content edits win over the iTa'leem mirror: forget the link (and remember
+    # the UID) so a later sync neither overwrites nor resurrects the row.
+    if task.external_uid and fields & {
+        "title",
+        "description",
+        "dueAt",
+        "priority",
+        "subtasks",
+        "links",
+        "groupId",
+    }:
+        moodle_services.ignore_task(db, user, task)
+        task.external_uid = None
+
     db.commit()
     db.refresh(task)
     google_services.push_task(db, user, task)
@@ -230,6 +246,7 @@ def update_task(db: DbSession, user: User, task_id: uuid.UUID, patch: TaskPatch)
 def delete_task(db: DbSession, user: User, task_id: uuid.UUID) -> None:
     task = require_task(db, user, task_id)
     google_services.delete_task_twin(db, user, task)
+    moodle_services.ignore_task(db, user, task)
     db.delete(task)
     db.commit()
 
@@ -245,6 +262,9 @@ def postpone_task(db: DbSession, user: User, task_id: uuid.UUID, timezone_offset
         local_now = datetime.now(UTC) - offset
         tomorrow = (local_now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
         task.due_at = tomorrow + offset
+    if task.external_uid:
+        moodle_services.ignore_task(db, user, task)
+        task.external_uid = None
     db.commit()
     db.refresh(task)
     google_services.push_task(db, user, task)

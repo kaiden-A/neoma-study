@@ -10,7 +10,7 @@ settings = get_settings()
 
 # Sync SQLAlchemy on purpose: Neon's pooler is a known trap for asyncpg's
 # prepared statements, and pg8000 (pure Python, no native DLL) is plenty here.
-_connect_args: dict[str, object] = {}
+_connect_args: dict[str, object] = {"timeout": 10}
 if settings.ssl_required:
     _connect_args["ssl_context"] = ssl.create_default_context()
 

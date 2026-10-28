@@ -36,7 +36,7 @@ One stop centre for studying:
       links and markdown input rules (`RichTextEditor.tsx`); group feeds
       render Markdown through `lib/markdown.ts`; rows/cards/palette strip
       syntax. Inline image paste/upload still needs the attachment model
-      (see §3.6).
+      (see §3.7).
 - [x] Explicit save — dirty tracking over title/body/tags/subject, Save button
       (header on desktop, bottom bar on mobile), Ctrl/Cmd+S, leave guard
       (Cancel / Discard / Save & leave) + `beforeunload`. Autosave removed.
@@ -204,7 +204,189 @@ One stop centre for studying:
       or a deep-link "Ask in LibreChat" button. Never build the iframe panel
       unless LibreChat is on a same-site subdomain (third-party cookies).
 
-### 3.6 Later / optional (each is its own project)
+### 3.6 iTa'leem (Moodle) — the all-in-one source (planned 28 Oct 2026)
+
+**Goal.** iTa'leem courses, deadlines and material inside Neoma: a `/courses`
+home, assignment/quiz deadlines as tasks, the course outline with files, and
+"Save to vault" so PDFs/decks open in the study reader, become searchable and
+turn into flashcards.
+
+**Verified 28 Oct 2026.** Canonical host `https://italeemc.iium.edu.my`
+(Moodle 5.2-era `2026042000.02`; `italeem.iium.edu.my` 301s to the root).
+`admin/tool/mobile/launch.php` and the `moodle_mobile_app` service are enabled
+and allow browser login (303 to login + `tool_mobile_launch` cookie; a disabled
+service would error before `require_login`). `calendar/export_execute.php` is
+enabled (`Invalid authentication`, not `no export`). REST answers JSON
+(`invalidtoken`), and a plain server-side GET is not Cloudflare-challenged from
+this machine. The mobile service exposes ~175 functions, incl.
+`core_enrol_get_users_courses`, `mod_assign_get_assignments`,
+`core_course_get_contents`, `core_calendar_get_action_events_by_timesort`,
+`gradereport_user_get_grade_items`; file downloads need `?token=` on
+`/webservice/pluginfile.php`. Tokens have no expiry and survive password changes
+(Moodle wipes them on account deletion) — encrypt at rest, never return them to
+the client.
+
+**Auth (one paste per user, no shell).** Settings → iTa'leem → open
+`launch.php?service=moodle_mobile_app&passport=<rand>&urlscheme=neoma&confirmed=1`
+while signed in, copy the `neoma://token=...` link, paste it into Neoma.
+`POST /api/moodle/token` decodes `siteid:::wstoken:::privatetoken`, validates
+with `core_webservice_get_site_info`, then stores the token encrypted.
+
+**Non-goals.** Submitting assignments, forum posts, messages, profile writes —
+the token allows them, our code won't. Read-only mirror; not a Moodle
+replacement.
+
+**Work order:** say **proceed with A**, then **B**, **C**, **D**, **E**, **F**,
+**G**. Each phase ends at its gate; do not start the next one before the gate
+passes.
+**Defaults unless you say otherwise:** read-only; files on demand (auto-save
+off); imported deadlines remind 24 h before; Courses in the top nav.
+
+**Status 28 Oct 2026 (live).** Connected with a real IIUM account: courses and
+deadlines synced, and `scripts/moodle_debug.py` pulled site info, courses,
+assignments, action events and every course outline. IIUM intermittently serves
+a bad backend node (`$CFG->dataroot` fatal, HTTP 500); Neoma retries 5xx twice
+and now returns a course with `outlineError` + cached data instead of a 503.
+Remaining: capture the real fixtures, run the full pytest suite (Neon is flaky
+from this machine), the live browser pass, and revoke the token that appeared in
+a screenshot.
+
+#### Phase A — spike + fixtures (script built; needs your token)
+
+- [ ] `server/scripts/moodle_spike.py`: token from `MOODLE_TOKEN` or argv;
+      print site info (release, userid, `functions[]`), courses, assignments
+      for one course, one outline; download one file to a temp path.
+- [ ] Save redacted JSON under `server/tests/fixtures/moodle/` (site info,
+      courses, assignments, outline) and record which functions IIUM exposes.
+- [ ] Run it from this machine; note the release and any missing call.
+- **Gate:** four calls return, one file downloads, fixtures are in the repo.
+
+#### Phase B — account + sync spine (built)
+
+- [ ] Alembic (hand-reviewed): `moodle_accounts` (`user_id` unique, `wwwroot`,
+      `token_enc`, `moodle_user_id`, `username`, `release`, `functions` JSONB,
+      `ignored_uids` JSONB, `last_sync_at`, `last_error`); `moodle_courses`
+      (`user_id`, `course_id`, `shortname`, `fullname`, `category`, `progress`,
+      `subject_id` FK SET NULL, `outline` JSONB, `outline_at`, `archived`,
+      unique `(user_id, course_id)`); `moodle_assignments` (`user_id`,
+      `course_id`, `assign_id`, `cmid`, `name`, `due_at`, `cutoff_at`, `intro`,
+      `submission_status`, `grade`, `grade_max`, `timemodified`, `task_id`,
+      unique `(user_id, assign_id)`); `tasks.external_uid` + `tasks.course_id`
+      (FK SET NULL).
+- [ ] `services/crypto.py`: lift Google's Fernet helper into a shared
+      `encrypt_secret` / `decrypt_secret` keyed by `APP_SECRET` + purpose.
+- [ ] `services/moodle_services.py`: `MoodleClient` (httpx, form-encoded REST,
+      15 s timeout, 2 concurrent max, JSON errors), `connect_token`, `sync`,
+      `status`, `disconnect`; assignment/quiz → task mapping; UID dedupe; skip
+      `modulename=assign` calendar events; detach on edit; `ignored_uids`
+      tombstones.
+- [ ] `schemas/moodle.py`, `routers/moodle_router.py`, `main.py`:
+      `GET /api/moodle`, `POST /api/moodle/token`, `POST /api/moodle/sync`
+      (`?auto=true`), `DELETE /api/moodle`.
+- [ ] `settings_services.py`: `MoodleSettings` (`status`, `lastSyncAt`,
+      `error`) inside `users.settings`; the token never goes there.
+- [ ] `bootstrap_router.py`: course summary + moodle status.
+- [ ] Settings card (paste link, status, sync now, disconnect) and task chips;
+      `/courses` empty state links back to Settings.
+- [ ] Tests: token decode/validation, idempotent sync, detach, delete/ignore,
+      `invalidtoken`, Cloudflare HTML, timeout.
+- **Gate:** real connect works; deadlines land as tasks; a second sync is a
+  no-op; disconnect removes only that user's mirror.
+
+#### Phase C — course pages (built)
+
+- [ ] `GET /api/moodle/courses` (summary) and
+      `GET /api/moodle/courses/{id}` (outline + assignments; `?refresh=1`);
+      fetch the outline lazily and cache it for 60 min, filter `uservisible`.
+- [ ] `app/(app)/courses/page.tsx` + `courses/[id]/page.tsx` +
+      `components/courses/*` + `loading.tsx`; cards coloured from `MARKERS`,
+      progress, next deadline, counts; tabs **Outline · Assignments · Files ·
+      Grades** (Grades empty until E).
+- [ ] `AppShell.tsx` nav entry + `CommandPalette.tsx`; reuse `nm-card`,
+      `nm-chip`, `nm-list`; no raw Moodle HTML (link out for pages/labels).
+- **Gate:** a real course renders, mobile 390×844 pass, only visible modules
+  appear.
+
+#### Phase D — content into the vault (built)
+
+- [ ] `POST /api/moodle/courses/{id}/save` `{cmid, fileIndex}`; the server
+      resolves `fileurl` from the cached outline (never accepts a URL from the
+      client), appends `?token=`, caps at 50 MB.
+- [ ] `FileObject` + `Storage.put` + `extract_services.extract_file_text` +
+      `Note` (personal, course subject, tags `["iTa'leem", shortname]`,
+      `external_uid`); one folder per course via `moodle_courses.subject_id`,
+      created once and not recreated if deleted.
+- [ ] `mod_url` → link note; `mod_folder` → each file; `mod_page`/`label` →
+      "Open in iTa'leem"; saved files open in `PdfViewer`/`FilePreview`.
+- [ ] UI: Save button, saved state, "Open in Neoma"; stale badge when the
+      Moodle file's `timemodified` moves on (never auto-replace: page-anchored
+      highlights).
+- [ ] Tests: fake `Storage`, dedupe by UID, extraction called, oversize/404.
+- **Gate:** save a PDF, open it, highlight it, and find it via "Search inside
+  files".
+
+#### Phase E — status + grades (built)
+
+- [ ] `mod_assign_get_submission_status` and
+      `gradereport_user_get_grade_items`, cached per course; never auto-complete
+      a Neoma task from Moodle.
+- [ ] Assignment chips (Submitted / Not submitted / Graded x/y) and the Grades
+      tab; refresh on tab open if older than 6 h.
+- **Gate:** statuses and grades match iTa'leem.
+
+#### Phase F — hardening + docs (mostly built; live checks pending)
+
+- [ ] Reconnect/invalid-token states; disconnect purges that user's account,
+      courses, assignments and mirrored tasks/notes only.
+- [ ] `scripts/sync_moodle.py` + `POST /api/maintenance/sync-moodle`
+      (`X-Cleanup-Secret`), same pattern as Google.
+- [ ] `docs/italeem.md`: token steps, API surface, failure modes; update
+      `AGENTS.md` seams + this list on ship.
+- [ ] Full checks: `ruff check`/`format`, `pyright`, `pytest`, client
+      `typecheck`/`lint`/`build`, plus the §7 headless-Chrome pass.
+- **Gate:** all checks green and the real-browser pass recorded.
+
+#### Phase G — MCP tools (built)
+
+Imported deadlines are already Neoma tasks, so the existing `list_tasks`,
+`upcoming` and `daily_brief` tools see them for free. This phase adds the
+iTa'leem-specific context an agent needs (courses, materials, grades, a sync
+trigger).
+
+- [ ] `app/mcp_italeem.py`, imported from `main.py` beside `mcp_tools`:
+      `italeem_status`, `italeem_courses`, `italeem_deadlines`,
+      `italeem_course`, `italeem_files`, `italeem_assignment`,
+      `italeem_grades`, `italeem_sync`, `italeem_save_file`. Every read uses
+      `current_user(db)`; no token, connect link or secret is ever returned.
+- [ ] Freshness: `italeem_deadlines` runs a light sync (assignments + calendar)
+      when `last_sync_at` is older than 10 min, with a 15 s timeout; on failure
+      it returns cached rows with `stale: true` + `warning` instead of erroring.
+      Outlines refresh lazily (>60 min); grades only on request.
+- [ ] Shapes: deadlines `{taskId, title, course, dueAt, due, overdue, status,
+      submission, url}`; `italeem_assignment(taskId)` returns the intro text,
+      cutoff, submission status, grade and activity URL; course sections
+      `{name, modules: [{cmid, name, modname, url, description?, files:
+      [{filename, mimetype, size, savedNoteId}]}]}` with descriptions stripped
+      to text and capped; `italeem_grades` returns cached items per course.
+      Return `truncated: true` when a cap is hit rather than dumping a whole
+      course.
+- [ ] `italeem_sync` (MUTATING) is a no-op inside 60 s; `italeem_save_file`
+      (MUTATING) reuses the Phase D resolver (never a URL from the caller) and
+      returns the new note id.
+- [ ] Update the MCP instructions string in `mcp_server.py`, the `MCP_TOOLS`
+      list on the Settings page, and `docs/italeem.md` (examples: "what's due
+      this week", "what's in my Business Law course", "save week 5 slides").
+- [ ] Tests: tool list contains the new names, owner scoping, not-connected is
+      a readable sentence, stale fallback, save-file with fake `Storage`.
+- **Gate:** from Elpis/Claude, the three example prompts return real iTa'leem
+  data and "save week 5 slides" creates a vault note.
+
+G needs B for the read tools and D for `italeem_save_file`; E supplies grades.
+
+A–D is the "all in one place to study" core (≈7–9 d); E–G is polish and agent
+access (≈4–5 d).
+
+### 3.7 Later / optional (each is its own project)
 
 - [ ] Offline: cache the bootstrap payload + queue note edits (lecture-hall
       wifi). PWA shell already exists.

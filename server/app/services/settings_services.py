@@ -34,6 +34,12 @@ class ElpisSettings(BaseModel):
     token: str = ""
 
 
+class MoodleSettings(BaseModel):
+    status: Literal["connected", "disconnected"] = "disconnected"
+    lastSyncAt: int | None = None
+    error: str | None = None
+
+
 class UserSettings(BaseModel):
     theme: Literal["light", "dark"] = "light"
     leadTimeHours: int = 48
@@ -44,6 +50,7 @@ class UserSettings(BaseModel):
     officePreview: bool = True
     kinds: NotificationKinds = Field(default_factory=NotificationKinds)
     google: GoogleSettings = Field(default_factory=GoogleSettings)
+    moodle: MoodleSettings = Field(default_factory=MoodleSettings)
     elpis: ElpisSettings = Field(default_factory=ElpisSettings)
     syncLog: list[str] = Field(default_factory=list)
 

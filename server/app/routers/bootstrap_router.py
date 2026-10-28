@@ -15,6 +15,7 @@ from ..dependencies import require_user
 from ..models import Subject, User
 from ..schemas.events import EventOut
 from ..schemas.groups import GroupOut
+from ..schemas.moodle import CourseOut
 from ..schemas.notes import NoteOut
 from ..schemas.notifications import NotificationOut
 from ..schemas.settings import UserSettings
@@ -27,6 +28,7 @@ from ..services import (
     event_services,
     flashcard_services,
     group_services,
+    moodle_services,
     note_services,
     notification_services,
     settings_services,
@@ -45,6 +47,7 @@ class BootstrapOut(BaseModel):
     tasks: list[TaskOut]
     notes: list[NoteOut]
     events: list[EventOut]
+    courses: list[CourseOut]
     notifications: list[NotificationOut]
     flashcards: list[FlashcardOut]
     study: StudyOverview
@@ -65,6 +68,7 @@ def bootstrap(user: User = Depends(require_user), db: DbSession = Depends(get_db
         tasks=task_services.list_tasks(db, user),
         notes=note_services.list_notes(db, user),
         events=event_services.list_events(db, user),
+        courses=moodle_services.list_courses(db, user),
         notifications=notification_services.derive(db, user),
         flashcards=flashcard_services.list_cards(db, user),
         study=study_services.overview(db, user),

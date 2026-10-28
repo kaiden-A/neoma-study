@@ -2,9 +2,10 @@
 
 Study OS: group projects (task boards), study groups (shared notes), personal
 notes, one calendar. Built from `master-plan.md`; read it before changing the
-core. `prototype/` is the frontend-only reference for behaviour — read it,
-don't edit it. (The notes home is an intentional evolution past its look: the
-folder grid in `components/notes/VaultHome.tsx`.)
+core. `todo.md` tracks the agreed roadmap and shipped work. The UI's design
+language is `app/globals.css` (tokens + `nm-*` component classes) — reuse it
+rather than inventing patterns; the notes home (folder grid,
+`components/notes/VaultHome.tsx`) is an intentional evolution past it.
 
 ## Commands
 
@@ -27,6 +28,10 @@ uv run --directory server python scripts/smoke_session.py mint|clean   # dev ses
 
 Server runs on Python 3.13 (`.python-version`, uv-managed). The Dockerfile
 builds on 3.12; `uv.lock` is universal, so keep both working.
+
+UI phases get a real-browser check; `todo.md` §7 documents the headless-Chrome
+harness (spare ports, `smoke_session`, `POST /api/demo`). Never kill a dev
+server you did not start.
 
 ## Server invariants
 
@@ -73,13 +78,13 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
 - `/api/*` is always the FastAPI rewrite in `next.config.ts` (afterFiles).
 - Session-bearing fetches go through `lib/api-client.ts` (`apiFetch`/`apiGet`/
   `apiPost`/…); 401 → `/login?next=`.
-- `lib/store.tsx` is the single client store (the prototype's store, re-shaped):
-  `GET /api/bootstrap` loads everything and actions patch local state. Add a
-  slice + actions there rather than fetching in pages.
-- `app/globals.css` is the prototype's design layer copied verbatim, plus Tailwind
-  `@theme` tokens and next/font wiring. Keep the look identical to `prototype/`
-  (except the notes home's folder grid — the intentional redesign above); port
-  component classes rather than inventing new ones.
+- `lib/store.tsx` is the single client store: `GET /api/bootstrap` loads
+  everything and actions patch local state. Add a slice + actions there rather
+  than fetching in pages.
+- `app/globals.css` carries the design layer (tokens + `nm-*` component classes)
+  plus Tailwind `@theme` tokens and next/font wiring. Reuse those classes rather
+  than inventing new ones; the notes home's folder grid is the intentional
+  exception.
 - React Compiler lint is on: no `Date.now()` in render (use `lib/useNow.ts`), no
   synchronous `setState` in effects (lazy initializers or event handlers).
 - Store mutations are optimistic: `updateTask`/`deleteTask`/`postponeTask` and
@@ -97,6 +102,12 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   `MAX_FILE_BYTES` (15MB) ≤ server `MAX_UPLOAD_BYTES` (15MB) <
   `experimental.proxyClientMaxBodySize` in `next.config.ts` (20MB).
   Previews use short-lived presigned GETs resolved per render.
+- `RichTextEditor.tsx` supports inline pictures (drag/drop, paste, `/image`)
+  through an `uploadImage` prop that `NoteEditor` wires to `compressImage` +
+  `store.uploadFile` (group-scoped in group notes). Gotcha: with
+  `immediatelyRender: false` the editor is created after mount and extension
+  options freeze first — extension callbacks must receive the live editor
+  (the slash image picker does) instead of capturing the component's binding.
 - Previews: `lib/links.ts` recognises YouTube/Vimeo URLs and `LinkPreview.tsx`
   owns link rendering (click-to-play facade; the provider is only contacted on
   play; respects the `linkEmbeds` setting). `FilePreview.tsx` picks the pane:
@@ -108,6 +119,11 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   resume marks. `PdfViewer` reports position and runs the selection→highlight
   flow; the note page renders marks/excerpts and the flashcard card. Focus view
   (material | split | write) is `lib/studyView.ts` + `.nm-study*` CSS.
+- The vault is folder-first: `/vault` is a home of folder tiles + a capped
+  "Suggested" list (no inner sidebar); `?subject=<id>` and `?subject=unsorted`
+  open a folder, `?view=all` is the flat list, and the folder breadcrumb doubles
+  as the switcher. Home search is global, folder search stays scoped. Personal
+  notes say "folder"; group panels keep saying "subject".
 - Vault search is local for titles/body/tags; "Search inside files" asks the
   server (`store.searchNotes` → `GET /api/notes?q=`) so hits inside extracted
   file text (with "found in file · page N" snippets) and in group notes appear.
@@ -127,7 +143,14 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   old keys. `import_account`/`clear_demo` purge blobs before their rows;
   `purge_orphan_files` (via `POST /api/maintenance/cleanup`) sweeps reserved rows
   that never became a note; `scripts/reconcile_files.py` reconciles R2 against
-  the `files` table. `Storage.delete` is best-effort but logs failures - a
+  the `files` table. Inline note images live in the body as
+  `![alt](/api/files/<id>/raw)`; that path 307s to a fresh presigned GET (a
+  body must never store a presigned URL). Public shares rewrite it to
+  `/api/shares/{token}/files/{id}/raw` for ids the shared note embeds. Bodies
+  are the only reference store: `file_services.body_file_ids` /
+  `referenced_file_ids` feed `purge_orphan_files`, deleting a note purges inline
+  files nothing else embeds, and `share_to_group` copies each blob to the group
+  and rewrites the ids. `Storage.delete` is best-effort but logs failures - a
   rejected delete would otherwise leave the blob in R2 with no recovery path.
 - File text: `services/extract_services.py` extracts on upload (pypdf /
   python-docx / python-pptx / plain; ≤5MB, never fails the upload) into
@@ -159,6 +182,17 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   moves and group sessions notify by Neoma's own email (`.ics` attached +
   Add-to-Google button) instead of Google invitations — see
   `email_services.send_task_*` / `send_session_notice`.
+- iTa'leem (IIUM Moodle): `services/moodle_services.py` mirrors the user's own
+  courses, assignment/quiz deadlines and a lazily cached outline. The mobile
+  web-service token is obtained by pasting a `neoma://token=...` link from
+  `admin/tool/mobile/launch.php`; it lives encrypted in `moodle_accounts`
+  (`services/crypto.py`, purpose `moodle`) and never reaches the client.
+  Imported tasks use `tasks.external_uid` (`assign:`/`italeem-event:`) and
+  `tasks.course_id`; editing or deleting detaches the row and records the UID in
+  `moodle_accounts.ignored_uids` so a sync cannot resurrect it. Course files are
+  copied into R2/vault on demand (`POST /api/moodle/courses/{id}/save`), then the
+  normal note/extraction/search/viewer path applies. `mcp_italeem.py` adds the
+  `italeem_*` MCP tools. Read-only: never submit, post or message.
 - Notifications are derived, never stored: `services/notification_services.py`
   (keys like `overdue:{task}`, `due:{task}:{lead}`); only read/snooze state persists.
 - Email: one digest per user per day (`reminder_services.send_reminders`,
@@ -166,11 +200,12 @@ builds on 3.12; `uv.lock` is universal, so keep both working.
   `POST /api/maintenance/send-reminders` with the `X-Cleanup-Secret` header.
 - Data: `GET /api/export`, `POST /api/import`, `POST /api/demo` (sample semester),
   `DELETE /api/demo` (deletes everything the caller owns).
-- MCP: `app/mcp_server.py` + `app/mcp_tools.py`, mounted last; `GET /mcp` is 405.
+- MCP: `app/mcp_server.py` + `app/mcp_tools.py` + `app/mcp_italeem.py`, mounted
+  last; `GET /mcp` is 405.
   Every tool result ends with a `Now: ...` line (TimeContextMiddleware in
   `mcp_server.py`, driven by `DEFAULT_TIMEZONE`; tzdata is a dependency) and
   `neoma.now` reports the clock on demand. Flashcard tools: `list_due_cards`,
-  `create_card`, `grade_card`.
+  `create_card`, `grade_card`; iTa'leem tools: `italeem_*`.
 
 ## Deploy notes
 

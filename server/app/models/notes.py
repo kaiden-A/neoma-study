@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -98,6 +99,7 @@ class Note(Base):
             " OR (scope = 'group' AND group_id IS NOT NULL AND owner_id IS NULL)",
             name="ck_notes_scope_owner_group",
         ),
+        UniqueConstraint("owner_id", "external_uid", name="uq_notes_owner_external_uid"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -127,6 +129,8 @@ class Note(Base):
     body: Mapped[str] = mapped_column(String(20000), default="", nullable=False)
     url: Mapped[str | None] = mapped_column(String(1000))
     file_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("files.id", ondelete="SET NULL"))
+    # iTa'leem mirror: the Moodle file this note was saved from (dedupes saves).
+    external_uid: Mapped[str | None] = mapped_column(String(200), index=True)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Request state (group notes with type='request' only).

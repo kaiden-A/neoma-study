@@ -57,6 +57,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const pages: Command[] = [
       { id: "page.today", label: "Go to Home", icon: "fa-house", hint: "Page", keywords: "home dashboard brief", run: go("/today") },
       { id: "page.groups", label: "Go to Groups", icon: "fa-users", hint: "Page", keywords: "projects teams", run: go("/groups") },
+      { id: "page.courses", label: "Go to Courses", icon: "fa-book-open", hint: "Page", keywords: "italeem moodle classes modules", run: go("/courses") },
       { id: "page.tasks", label: "Go to My to-do", icon: "fa-list-check", hint: "Page", keywords: "todo personal checklist", run: go("/tasks") },
       { id: "page.vault", label: "Go to Notes", icon: "fa-note-sticky", hint: "Page", keywords: "notes vault study", run: go("/vault") },
       { id: "page.calendar", label: "Go to Calendar", icon: "fa-calendar-days", hint: "Page", keywords: "dates exams sessions", run: go("/calendar") },

@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import mcp_server, mcp_tools  # noqa: F401  (mcp_tools registers the tools)
+from . import mcp_italeem, mcp_server, mcp_tools  # noqa: F401  (the modules register tools)
 from .config import get_settings
 from .routers import (
     auth_router,
@@ -24,6 +24,7 @@ from .routers import (
     invites_router,
     links_router,
     maintenance_router,
+    moodle_router,
     notes_router,
     notifications_router,
     settings_router,
@@ -122,6 +123,7 @@ app.include_router(subjects_router.router)
 app.include_router(files_router.router)
 app.include_router(events_router.router)
 app.include_router(google_router.router)
+app.include_router(moodle_router.router)
 app.include_router(notifications_router.router)
 app.include_router(maintenance_router.router)
 app.include_router(data_router.router)

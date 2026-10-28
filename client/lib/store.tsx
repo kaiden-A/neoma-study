@@ -13,6 +13,10 @@ import type {
   Bootstrap,
   CalendarEvent,
   CalendarItem,
+  Course,
+  CourseAssignment,
+  CourseDetail,
+  CourseGrade,
   EventCreateInput,
   EventPatchInput,
   FileOut,
@@ -27,6 +31,8 @@ import type {
   GroupNoteInput,
   LinkPreview,
   MemberUser,
+  MoodleStatus,
+  MoodleSyncResult,
   Note,
   NoteCreateInput,
   NotePatchInput,
@@ -120,6 +126,7 @@ interface StoreValue {
   tasks: Task[];
   notes: Note[];
   events: CalendarEvent[];
+  courses: Course[];
   notifications: NotificationItem[];
   flashcards: Flashcard[];
   study: StudyOverview | null;
@@ -130,6 +137,15 @@ interface StoreValue {
   taskById: (id: string) => Task | null;
   noteById: (id: string) => Note | null;
   eventById: (id: string) => CalendarEvent | null;
+  courseById: (id: string) => Course | null;
+  courseDetail: (id: string) => CourseDetail | null;
+  loadCourse: (id: string, refresh?: boolean) => Promise<CourseDetail>;
+  loadAssignments: (id: string) => Promise<CourseAssignment[]>;
+  loadGrades: (id: string) => Promise<CourseGrade[]>;
+  connectMoodle: (link: string) => Promise<MoodleStatus>;
+  syncMoodle: () => Promise<MoodleSyncResult>;
+  disconnectMoodle: () => Promise<void>;
+  saveCourseFile: (courseId: string, cmid: number, fileIndex?: number) => Promise<Note>;
   userById: (id: string) => MemberUser | null;
   userName: (id: string | null | undefined) => string;
   membersOf: (groupId: string) => MemberUser[];
@@ -277,6 +293,7 @@ function postponedDue(dueAt: number | null): number {
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const autoSyncDone = useRef(false);
+  const moodleSyncDone = useRef(false);
   const [status, setStatus] = useState<BootStatus>("loading");
   const [bootSlow, setBootSlow] = useState(false);
   const booted = useRef(false);
@@ -289,6 +306,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [courseDetails, setCourseDetails] = useState<Record<string, CourseDetail>>({});
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [study, setStudy] = useState<StudyOverview | null>(null);
@@ -332,6 +351,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setTasks(data.tasks ?? []);
     setNotes(data.notes ?? []);
     setEvents(data.events ?? []);
+    setCourses(data.courses ?? []);
     setNotifications(data.notifications ?? []);
     setFlashcards(data.flashcards ?? []);
     setStudy(data.study ?? null);
@@ -418,6 +438,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [ready, settings, refresh]);
 
+  useEffect(() => {
+    // iTa'leem deadlines go stale slowly; one light sync per day is enough and
+    // the server collapses simultaneous auto calls from other tabs.
+    if (!ready || settings?.moodle.status !== "connected") return;
+    if (moodleSyncDone.current) return;
+    const last = settings.moodle.lastSyncAt;
+    if (last && new Date(last).toDateString() === new Date().toDateString()) return;
+    moodleSyncDone.current = true;
+    void (async () => {
+      try {
+        await apiPost("/api/moodle/sync?auto=true");
+        await refresh();
+      } catch {
+        // Offline or iTa'leem down; cached deadlines stay usable.
+      }
+    })();
+  }, [ready, settings, refresh]);
+
   const replaceGroup = useCallback((group: Group) => {
     setGroups((current) => {
       const exists = current.some((item) => item.id === group.id);
@@ -459,6 +497,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const taskById = (id: string) => tasks.find((task) => task.id === id) ?? null;
     const noteById = (id: string) => notes.find((note) => note.id === id) ?? null;
     const eventById = (id: string) => events.find((event) => event.id === id) ?? null;
+    const courseById = (id: string) => courses.find((course) => course.id === id) ?? null;
+    const courseDetail = (id: string) => courseDetails[id] ?? null;
     const userById = (id: string) => {
       for (const group of groups) {
         const member = group.members.find((item) => item.id === id);
@@ -597,6 +637,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       tasks,
       notes,
       events,
+      courses,
       notifications,
       flashcards,
       study,
@@ -615,6 +656,64 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       taskById,
       noteById,
       eventById,
+      courseById,
+      courseDetail,
+      loadCourse: async (id, force = false) => {
+        const detail = await apiGet<CourseDetail>(
+          `/api/moodle/courses/${id}${force ? "?refresh=1" : ""}`,
+        );
+        setCourseDetails((current) => ({ ...current, [id]: detail }));
+        setCourses((current) => current.map((course) => (course.id === id ? detail.course : course)));
+        return detail;
+      },
+      loadGrades: async (id) => {
+        const grades = await apiGet<CourseGrade[]>(`/api/moodle/courses/${id}/grades`);
+        setCourseDetails((current) =>
+          current[id] ? { ...current, [id]: { ...current[id], grades } } : current,
+        );
+        return grades;
+      },
+      loadAssignments: async (id) => {
+        const assignments = await apiGet<CourseAssignment[]>(
+          `/api/moodle/courses/${id}/assignments`,
+        );
+        setCourseDetails((current) =>
+          current[id] ? { ...current, [id]: { ...current[id], assignments } } : current,
+        );
+        return assignments;
+      },
+      connectMoodle: async (link) => {
+        const result = await apiPost<{ status: MoodleStatus; counts: MoodleSyncResult }>(
+          "/api/moodle/token",
+          { link },
+        );
+        setCourseDetails({});
+        await refresh();
+        return result.status;
+      },
+      syncMoodle: async () => {
+        const result = await apiPost<MoodleSyncResult>("/api/moodle/sync");
+        setCourseDetails({});
+        await refresh();
+        return result;
+      },
+      disconnectMoodle: async () => {
+        await apiDelete("/api/moodle");
+        setCourses([]);
+        setCourseDetails({});
+        await refresh();
+      },
+      saveCourseFile: async (courseId, cmid, fileIndex = 0) => {
+        const saved = await apiPost<{ noteId: string; title: string; fileId: string; size: number }>(
+          `/api/moodle/courses/${courseId}/save`,
+          { cmid, fileIndex },
+        );
+        const note = await apiGet<Note>(`/api/notes/${saved.noteId}`);
+        replaceNote(note);
+        const detail = await apiGet<CourseDetail>(`/api/moodle/courses/${courseId}`);
+        setCourseDetails((current) => ({ ...current, [courseId]: detail }));
+        return note;
+      },
       userById,
       userName,
       membersOf,
@@ -1053,6 +1152,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     tasks,
     notes,
     events,
+    courses,
+    courseDetails,
     notifications,
     flashcards,
     study,

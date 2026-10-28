@@ -97,6 +97,8 @@ export interface Task {
   assigneeIds: string[];
   subtasks: Subtask[];
   links: TaskLink[];
+  courseId?: string | null;
+  moodle?: boolean;
 }
 
 export interface RequestState {
@@ -228,6 +230,97 @@ export interface GoogleSettings {
   calendar: string;
 }
 
+export interface MoodleSettings {
+  status: "connected" | "disconnected";
+  lastSyncAt: number | null;
+  error: string | null;
+}
+
+export interface MoodleStatus {
+  connected: boolean;
+  username: string | null;
+  release: string | null;
+  lastSyncAt: number | null;
+  error: string | null;
+  courses: number;
+  upcoming: number;
+}
+
+export interface MoodleSyncResult {
+  courses: number;
+  deadlines: number;
+  events: number;
+}
+
+export interface Course {
+  id: string;
+  moodleId: number;
+  shortname: string;
+  fullname: string;
+  color: string;
+  progress: number | null;
+  subjectId: string | null;
+  openDeadlines: number;
+  nextDueAt: number | null;
+  archived: boolean;
+}
+
+export interface CourseFile {
+  filename: string;
+  mimetype: string;
+  size: number;
+  noteId: string | null;
+}
+
+export interface CourseModule {
+  cmid: number;
+  name: string;
+  modname: string;
+  url: string | null;
+  description: string;
+  link: string | null;
+  files: CourseFile[];
+}
+
+export interface CourseSection {
+  id: number;
+  name: string;
+  summary: string;
+  modules: CourseModule[];
+}
+
+export interface CourseAssignment {
+  taskId: string | null;
+  assignId: number;
+  cmid: number;
+  name: string;
+  dueAt: number | null;
+  cutoffAt: number | null;
+  submissionStatus: string;
+  grade: string;
+  gradeMax: string;
+  url: string;
+}
+
+export interface CourseGrade {
+  name: string;
+  grade: string;
+  max: string;
+  percentage: string;
+  feedback: string;
+  cmid: number | null;
+}
+
+export interface CourseDetail {
+  course: Course;
+  sections: CourseSection[];
+  assignments: CourseAssignment[];
+  grades: CourseGrade[];
+  outlineAt: number | null;
+  outlineError: string | null;
+  truncated: boolean;
+}
+
 export interface ElpisSettings {
   url: string;
   enabled: boolean;
@@ -242,11 +335,12 @@ export interface UserSettings {
   officePreview: boolean;
   kinds: NotificationKinds;
   google: GoogleSettings;
+  moodle: MoodleSettings;
   elpis: ElpisSettings;
   syncLog: string[];
 }
 
-export type UserSettingsPatch = Partial<Omit<UserSettings, "kinds" | "google" | "elpis">> & {
+export type UserSettingsPatch = Partial<Omit<UserSettings, "kinds" | "google" | "moodle" | "elpis">> & {
   kinds?: Partial<NotificationKinds>;
   elpis?: Partial<ElpisSettings>;
 };
@@ -276,6 +370,7 @@ export interface Bootstrap {
   tasks?: Task[];
   notes?: Note[];
   events?: CalendarEvent[];
+  courses?: Course[];
   notifications?: NotificationItem[];
   flashcards?: Flashcard[];
   study?: StudyOverview;

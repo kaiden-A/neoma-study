@@ -31,6 +31,8 @@ class TaskOut(BaseModel):
     assigneeIds: list[str]
     subtasks: list[SubtaskOut]
     links: list[TaskLinkOut]
+    courseId: str | None = None
+    moodle: bool = False
 
 
 class SubtaskIn(BaseModel):

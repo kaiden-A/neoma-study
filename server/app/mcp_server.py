@@ -185,8 +185,10 @@ mcp = MCPServer(
     version="0.1.0",
     instructions=(
         "Neoma is a study OS: group projects with shared task boards, study groups with shared "
-        "notes, a personal vault and one calendar. Tools act as the signed-in member and only "
-        "touch data that member can see. Destructive tools say so in their annotations. "
+        "notes, a personal vault, one calendar and an iTa'leem (IIUM Moodle) mirror. Tools act as "
+        "the signed-in member and only touch data that member can see. Destructive tools say so in "
+        "their annotations. The italeem_* tools read the member's courses, deadlines and materials; "
+        "only italeem_sync and italeem_save_file change anything. "
         "Every tool result ends with a `Now: ...` line giving the current time; timestamps in "
         "payloads are unix milliseconds UTC."
     ),

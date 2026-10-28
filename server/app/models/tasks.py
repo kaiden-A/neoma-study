@@ -33,6 +33,7 @@ class Task(Base):
             "(owner_id IS NULL) <> (group_id IS NULL)",
             name="ck_tasks_owner_xor_group",
         ),
+        UniqueConstraint("owner_id", "external_uid", name="uq_tasks_owner_external_uid"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -64,6 +65,12 @@ class Task(Base):
         Uuid, ForeignKey("google_accounts.id", ondelete="SET NULL")
     )
     reminder_minutes: Mapped[int] = mapped_column(Integer, default=60, server_default="60", nullable=False)
+    # iTa'leem mirror: the Moodle UID this task came from (assign:…/italeem-event:…)
+    # and the mirrored course. Editing the content clears external_uid (detach).
+    external_uid: Mapped[str | None] = mapped_column(String(200), index=True)
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("moodle_courses.id", ondelete="SET NULL"), index=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

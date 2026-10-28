@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
-from app.models import Event, Task, User
+from app.models import Event, MoodleAccount, MoodleCourse, Task, User
+from app.services import crypto
 
 settings = get_settings()
 
@@ -116,6 +117,15 @@ def test_initialize_and_tools_list(client: TestClient, mcp_env: User, mcp_key: s
         "delete_event",
         "daily_brief",
         "now",
+        "italeem_status",
+        "italeem_courses",
+        "italeem_deadlines",
+        "italeem_course",
+        "italeem_files",
+        "italeem_assignment",
+        "italeem_grades",
+        "italeem_sync",
+        "italeem_save_file",
     } <= names
 
 
@@ -361,3 +371,58 @@ def test_read_tools_have_humanized_dates(client: TestClient, mcp_env: User, mcp_
     brief = _payload(_call(client, "daily_brief", {}, mcp_key))
     assert brief["now"]["unixMs"] > 0
     assert brief["thisWeek"][0]["dueAtIso"].endswith("Z")
+
+
+def test_italeem_tools_read_the_mirror(
+    client: TestClient, mcp_env: User, mcp_key: str, db: DbSession
+) -> None:
+    account = MoodleAccount(
+        user_id=mcp_env.id,
+        wwwroot="https://italeemc.iium.edu.my",
+        token_enc=crypto.encrypt_secret("a" * 32, "moodle"),
+        moodle_user_id=7,
+        username="s1234567",
+        release="5.2",
+        last_sync_at=datetime.now(UTC),
+    )
+    db.add(account)
+    db.flush()
+    course = MoodleCourse(
+        user_id=mcp_env.id,
+        course_id=101,
+        shortname="LAWS1010",
+        fullname="Business Law",
+        folder_created=True,
+        last_synced_at=datetime.now(UTC),
+    )
+    db.add(course)
+    db.flush()
+    task = Task(
+        owner_id=mcp_env.id,
+        title="Case brief",
+        due_at=datetime.now(UTC) + timedelta(days=2),
+        external_uid="assign:500",
+        course_id=course.id,
+        created_by=mcp_env.id,
+    )
+    db.add(task)
+    db.commit()
+
+    status = _payload(_call(client, "italeem_status", {}, mcp_key))
+    assert status["connected"] is True
+    assert status["courses"] == 1
+
+    courses = _payload(_call(client, "italeem_courses", {}, mcp_key))
+    assert courses[0]["shortname"] == "LAWS1010"
+
+    deadlines = _payload(_call(client, "italeem_deadlines", {"days": 7}, mcp_key))
+    assert deadlines["items"][0]["title"] == "Case brief"
+    assert deadlines["items"][0]["taskId"] == str(task.id)
+    assert deadlines["stale"] is False
+    assert deadlines["warning"] is None
+
+    missing = _call(client, "italeem_assignment", {"task_id": str(task.id)}, mcp_key)
+    payload = _payload(missing)
+    assert payload["title"] == "Case brief"
+    assert payload["course"] == "LAWS1010"
+

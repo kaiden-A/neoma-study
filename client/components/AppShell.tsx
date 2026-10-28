@@ -22,6 +22,7 @@ import { useNow } from "@/lib/useNow";
 const NAV = [
   { href: "/today", label: "Home", icon: "fa-house" },
   { href: "/groups", label: "Groups", icon: "fa-users" },
+  { href: "/courses", label: "Courses", icon: "fa-book-open" },
   { href: "/vault", label: "Notes", icon: "fa-note-sticky" },
   { href: "/review", label: "Review", icon: "fa-clone" },
   { href: "/calendar", label: "Calendar", icon: "fa-calendar-days" },

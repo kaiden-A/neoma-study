@@ -5,8 +5,6 @@ are encrypted at rest with a key derived from APP_SECRET. Push is best-effort
 on purpose: a Google outage must never fail a user's request.
 """
 
-import base64
-import hashlib
 import logging
 import re
 import uuid
@@ -15,7 +13,6 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -25,6 +22,7 @@ from ..models.enums import EventType
 from ..models.users import utcnow
 from ..utils import to_ms
 from . import ics_services, settings_services
+from .crypto import decrypt_secret, encrypt_secret
 from .errors import InvalidError, UnavailableError
 
 log = logging.getLogger(__name__)
@@ -717,22 +715,12 @@ def _disconnect_account(db: DbSession, account: GoogleAccount) -> None:
         _write_google_settings(db, user, status="disconnected", email=None, last_sync_at=None)
 
 
-def _fernet() -> Fernet:
-    digest = hashlib.sha256(f"neoma-google:{get_settings().app_secret}".encode()).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
-
-
 def _encrypt(value: str) -> str:
-    return _fernet().encrypt(value.encode()).decode()
+    return encrypt_secret(value, "google")
 
 
 def _decrypt(value: str | None) -> str | None:
-    if not value:
-        return None
-    try:
-        return _fernet().decrypt(value.encode()).decode()
-    except InvalidToken:
-        return None
+    return decrypt_secret(value, "google")
 
 
 def _headers(access_token: str) -> dict[str, str]:

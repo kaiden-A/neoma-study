@@ -32,6 +32,7 @@ export function TaskRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const done = task.status === "done";
   const group = task.groupId ? store.groupById(task.groupId) : null;
+  const course = task.courseId ? store.courseById(task.courseId) : null;
 
   function toggle() {
     const next = done ? "todo" : "done";
@@ -124,6 +125,18 @@ export function TaskRow({
           ) : null}
           {task.dueAt ? (
             <span className="nm-mono">{timeOnly ? fmtTime(task.dueAt) : fmtDateTime(task.dueAt)}</span>
+          ) : null}
+          {task.moodle ? (
+            <span className="nm-chip nm-chip--sm nm-chip--info">
+              <i className="fa-solid fa-graduation-cap" aria-hidden="true" />
+              iTa&apos;leem
+            </span>
+          ) : null}
+          {course ? (
+            <span className={`nm-chip nm-chip--sm nm-chip--mark nm-mk-${course.color}`}>
+              <span className="nm-dot" />
+              {course.shortname}
+            </span>
           ) : null}
           {task.priority === "high" && !done ? (
             <span className="nm-chip nm-chip--sm nm-chip--danger">{PRIORITY_LABEL.high}</span>

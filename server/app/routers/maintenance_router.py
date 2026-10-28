@@ -5,7 +5,7 @@ from ..config import get_settings
 from ..database import get_db
 from ..dependencies import get_storage
 from ..models import User
-from ..services import google_services, reminder_services, settings_services
+from ..services import google_services, moodle_services, reminder_services, settings_services
 from ..services.storage_services import Storage
 
 router = APIRouter(prefix="/api", tags=["maintenance"])
@@ -36,6 +36,17 @@ def sync_google(
     """Drives Google Calendar sync from a scheduler. Secret header only."""
     _require_secret(x_cleanup_secret)
     return google_services.sync_all(db, dry_run=dry_run)
+
+
+@router.post("/maintenance/sync-moodle")
+def sync_moodle(
+    dry_run: bool = Query(default=False),
+    x_cleanup_secret: str | None = Header(default=None),
+    db: DbSession = Depends(get_db),
+) -> dict[str, int]:
+    """Drives iTa'leem sync from a scheduler. Secret header only."""
+    _require_secret(x_cleanup_secret)
+    return moodle_services.sync_all(db, dry_run=dry_run)
 
 
 @router.post("/maintenance/cleanup")

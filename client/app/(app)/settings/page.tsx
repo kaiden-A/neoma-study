@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Avatar, Field } from "@/components/ui/bits";
@@ -40,6 +41,15 @@ const MCP_TOOLS = [
   ["neoma.create_note", "Capture a note or link into a subject or group topic"],
   ["neoma.list_events", "Calendar events in a date range"],
   ["neoma.daily_brief", "Everything Elpis needs to plan the day"],
+  ["neoma.italeem_status", "iTa'leem connection, last sync and mirror counts"],
+  ["neoma.italeem_courses", "Courses with progress and open deadlines"],
+  ["neoma.italeem_deadlines", "Assignments and quiz closes ahead"],
+  ["neoma.italeem_course", "A course outline with activities and files"],
+  ["neoma.italeem_files", "Course materials, with saved-to-vault state"],
+  ["neoma.italeem_assignment", "One assignment's intro, status and grade"],
+  ["neoma.italeem_grades", "Published grades per course"],
+  ["neoma.italeem_sync", "Refresh iTa'leem now"],
+  ["neoma.italeem_save_file", "Copy a course file into the vault"],
 ];
 
 export default function SettingsPage() {
@@ -53,6 +63,8 @@ export default function SettingsPage() {
   const [color, setColor] = useState(user?.color ?? "amber");
   const [elpisUrl, setElpisUrl] = useState(settings?.elpis.url ?? "");
   const [elpisToken, setElpisToken] = useState(settings?.elpis.token ?? "");
+  const [moodleLink, setMoodleLink] = useState("");
+  const [moodleBusy, setMoodleBusy] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const googleHandled = useRef(false);
 
@@ -103,6 +115,77 @@ export default function SettingsPage() {
       if (!quiet) toast("Saved", { kind: "success", timeout: 1600 });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : "Could not save that.", { kind: "danger" });
+    }
+  }
+
+  function openMoodleConnect() {
+    // The passport only identifies this connect attempt; the server validates
+    // the token itself with core_webservice_get_site_info.
+    const passport = Math.random().toString().slice(2);
+    const url =
+      "https://italeemc.iium.edu.my/admin/tool/mobile/launch.php" +
+      `?service=moodle_mobile_app&passport=${passport}&urlscheme=neoma&confirmed=1`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function connectMoodle() {
+    const link = moodleLink.trim();
+    if (!link) {
+      toast("Paste the connect link first.", { kind: "danger" });
+      return;
+    }
+    setMoodleBusy(true);
+    try {
+      const status = await store.connectMoodle(link);
+      setMoodleLink("");
+      toast(
+        status.courses
+          ? `iTa'leem connected — ${status.courses} course${status.courses === 1 ? "" : "s"}, ${status.upcoming} deadline${status.upcoming === 1 ? "" : "s"}.`
+          : "iTa'leem connected.",
+        { kind: "success" },
+      );
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not connect iTa'leem.", {
+        kind: "danger",
+      });
+    } finally {
+      setMoodleBusy(false);
+    }
+  }
+
+  async function syncMoodle() {
+    setMoodleBusy(true);
+    try {
+      const result = await store.syncMoodle();
+      toast(
+        `iTa'leem synced · ${result.courses} courses, ${result.deadlines + result.events} deadlines`,
+        { kind: "success" },
+      );
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not sync iTa'leem.", {
+        kind: "danger",
+      });
+    } finally {
+      setMoodleBusy(false);
+    }
+  }
+
+  async function disconnectMoodle() {
+    if (
+      !(await confirm({
+        title: "Disconnect iTa'leem?",
+        message: "Imported deadlines and courses are removed. Files you saved to the vault stay.",
+        confirmLabel: "Disconnect",
+        variant: "danger",
+      }))
+    ) {
+      return;
+    }
+    try {
+      await store.disconnectMoodle();
+      toast("iTa'leem disconnected", { kind: "info" });
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not disconnect.", { kind: "danger" });
     }
   }
 
@@ -394,6 +477,109 @@ export default function SettingsPage() {
               </label>
             </div>
             <p className="nm-help">Images, PDFs and text files preview on their own.</p>
+          </div>
+        </section>
+
+        <section className="nm-card">
+          <div className="nm-card-hd">
+            <h2 className="nm-card-title">iTa&apos;leem (Moodle)</h2>
+          </div>
+          <div className="nm-card-bd">
+            {settings.moodle.status === "connected" ? (
+              <>
+                <div className="nm-gcal-top">
+                  <span className="nm-gcal-logo">
+                    <i className="fa-solid fa-graduation-cap" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <div className="nm-gcal-status">Connected</div>
+                    <span className="nm-meta">
+                      {store.courses.length} course{store.courses.length === 1 ? "" : "s"}
+                      {settings.moodle.lastSyncAt
+                        ? ` · last sync ${fmtRelative(settings.moodle.lastSyncAt)}`
+                        : ""}
+                      {settings.moodle.error ? ` · ${settings.moodle.error}` : ""}
+                    </span>
+                  </div>
+                </div>
+                <div className="nm-gcal-actions">
+                  <button
+                    type="button"
+                    className="nm-btn nm-btn--secondary nm-btn--sm"
+                    onClick={() => void syncMoodle()}
+                    disabled={moodleBusy}
+                  >
+                    <i className="fa-solid fa-rotate" aria-hidden="true" />
+                    Sync now
+                  </button>
+                  <Link className="nm-btn nm-btn--ghost nm-btn--sm" href="/courses">
+                    <i className="fa-solid fa-book-open" aria-hidden="true" />
+                    Courses
+                  </Link>
+                  <button
+                    type="button"
+                    className="nm-btn nm-btn--danger nm-btn--ghost nm-btn--sm"
+                    onClick={() => void disconnectMoodle()}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+                <p className="nm-help">
+                  Read-only: Neoma mirrors courses, deadlines and files. It never submits work or posts to
+                  iTa&apos;leem.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="nm-meta mb-3">
+                  Sign in to iTa&apos;leem, open the connect page, then right-click{" "}
+                  <span className="nm-mono">click here to launch the app</span> → Copy link and paste it
+                  below.
+                </p>
+                <div className="nm-inline-actions mb-3">
+                  <button type="button" className="nm-btn nm-btn--secondary nm-btn--sm" onClick={openMoodleConnect}>
+                    <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
+                    Open iTa&apos;leem connect page
+                  </button>
+                  <a
+                    className="nm-btn nm-btn--ghost nm-btn--sm"
+                    href="https://italeemc.iium.edu.my/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    iTa&apos;leem home
+                  </a>
+                </div>
+                <Field label="Connect link" htmlFor="st-moodle-link">
+                  <input
+                    id="st-moodle-link"
+                    className="nm-input nm-mono"
+                    placeholder="neoma://token=…"
+                    value={moodleLink}
+                    onChange={(event) => setMoodleLink(event.target.value)}
+                  />
+                </Field>
+                <div className="nm-inline-actions">
+                  <button
+                    type="button"
+                    className="nm-btn nm-btn--primary nm-btn--sm"
+                    onClick={() => void connectMoodle()}
+                    disabled={moodleBusy}
+                  >
+                    {moodleBusy ? "Connecting…" : "Connect iTa'leem"}
+                  </button>
+                </div>
+                {settings.moodle.error ? (
+                  <p className="nm-help" style={{ color: "var(--danger)" }}>
+                    {settings.moodle.error}
+                  </p>
+                ) : null}
+                <p className="nm-help">
+                  The link contains your iTa&apos;leem web-service token. Neoma stores it encrypted and never
+                  shows it again; disconnect any time.
+                </p>
+              </>
+            )}
           </div>
         </section>
 
