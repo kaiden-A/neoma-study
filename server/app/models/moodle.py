@@ -11,9 +11,11 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -90,6 +92,8 @@ class MoodleCourse(Base):
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
     outline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Last successful forum check, so the announcements tab knows when to refresh.
+    announcements_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Compact gradereport_user_get_grade_items rows.
     grades: Mapped[list] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
@@ -131,6 +135,47 @@ class MoodleAssignment(Base):
         Uuid, ForeignKey("tasks.id", ondelete="SET NULL"), index=True
     )
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class MoodleAnnouncement(Base):
+    """One forum discussion mirrored for the course/global Announcements UI.
+
+    Announcements are read-only and owner-scoped. `read_at` is the UI's unread
+    state; `moodle_accounts.seen` remains the separate email dedupe state.
+    """
+
+    __tablename__ = "moodle_announcements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "discussion_id", name="uq_moodle_announcements_user_discussion"),
+        Index("ix_moodle_announcements_user_posted", "user_id", "posted_at"),
+        Index("ix_moodle_announcements_course_posted", "course_id", "posted_at"),
+        Index("ix_moodle_announcements_user_read", "user_id", "read_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("moodle_courses.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    forum_id: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    discussion_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    forum_name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    forum_type: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    subject: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    # Plain text: Moodle HTML is stripped before it is stored.
+    body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    author: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replies: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False

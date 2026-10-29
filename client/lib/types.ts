@@ -263,6 +263,7 @@ export interface Course {
   subjectId: string | null;
   openDeadlines: number;
   nextDueAt: number | null;
+  unreadAnnouncements: number;
   archived: boolean;
 }
 
@@ -320,6 +321,36 @@ export interface CourseDetail {
   outlineAt: number | null;
   outlineError: string | null;
   truncated: boolean;
+}
+
+export interface Announcement {
+  id: string;
+  courseId: string;
+  courseShortname: string;
+  courseColor: string;
+  forumName: string;
+  forumType: string;
+  discussionId: number;
+  subject: string;
+  body: string;
+  author: string;
+  postedAt: number | null;
+  modifiedAt: number | null;
+  replies: number;
+  url: string;
+  read: boolean;
+}
+
+export interface AnnouncementsResponse {
+  items: Announcement[];
+  unread: number;
+  syncedAt: number | null;
+  warning: string | null;
+}
+
+export interface AnnouncementReadResponse {
+  updated: number;
+  unread: number;
 }
 
 export interface ElpisSettings {

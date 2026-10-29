@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 
 import { EmptyState, Progress } from "@/components/ui/bits";
 import { fmtDay, fmtRelative } from "@/lib/dates";
@@ -9,6 +10,14 @@ import { useStore } from "@/lib/store";
 export function CoursesPage() {
   const store = useStore();
   const connected = store.settings?.moodle.status === "connected";
+  const announcementsLoaded = useRef(false);
+  const latest = store.announcements.slice(0, 3);
+
+  useEffect(() => {
+    if (!connected || announcementsLoaded.current) return;
+    announcementsLoaded.current = true;
+    void store.loadAnnouncements().catch(() => undefined);
+  }, [connected, store]);
 
   return (
     <div className="nm-page">
@@ -23,6 +32,10 @@ export function CoursesPage() {
             Courses
           </h1>
           <div className="nm-head-actions">
+            <Link className="nm-btn nm-btn--ghost nm-btn--sm" href="/courses/announcements">
+              <i className="fa-solid fa-bullhorn" aria-hidden="true" />
+              Announcements
+            </Link>
             <Link className="nm-btn nm-btn--ghost nm-btn--sm" href="/settings">
               <i className="fa-solid fa-sliders" aria-hidden="true" />
               iTa&apos;leem settings
@@ -34,6 +47,37 @@ export function CoursesPage() {
           matching vault folder, so it previews, searches and takes highlights like any other note.
         </p>
       </div>
+
+      {latest.length > 0 ? (
+        <section className="nm-card mb-5">
+          <div className="nm-card-hd flex items-center justify-between gap-3">
+            <h2 className="nm-card-title">Latest announcements</h2>
+            <Link className="nm-btn nm-btn--ghost nm-btn--sm" href="/courses/announcements">
+              View all
+            </Link>
+          </div>
+          <div className="nm-card-bd">
+            {latest.map((item) => (
+              <Link
+                key={item.id}
+                className="nm-announcement-strip"
+                href={`/courses/${item.courseId}?tab=announcements&discussion=${item.discussionId}`}
+              >
+                <span className="nm-announcement-strip-title">
+                  {item.read ? null : <span className="nm-announcement-dot" aria-hidden="true" />}
+                  {item.subject}
+                </span>
+                <span className="nm-meta nm-mono">
+                  {item.courseShortname}
+                  {item.postedAt || item.modifiedAt
+                    ? ` · ${fmtRelative(item.postedAt ?? item.modifiedAt ?? 0)}`
+                    : ""}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {!connected ? (
         <EmptyState
@@ -78,6 +122,12 @@ export function CoursesPage() {
                     <span className="nm-chip nm-chip--sm nm-chip--warn">
                       <i className="fa-solid fa-hourglass-half" aria-hidden="true" />
                       {course.openDeadlines} deadline{course.openDeadlines === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                  {course.unreadAnnouncements > 0 ? (
+                    <span className="nm-chip nm-chip--sm nm-chip--warn">
+                      <i className="fa-solid fa-bullhorn" aria-hidden="true" />
+                      {course.unreadAnnouncements} new
                     </span>
                   ) : null}
                 </div>

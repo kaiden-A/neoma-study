@@ -1,6 +1,7 @@
 """iTa'leem: token parsing, sync, detach/ignore and vault saves."""
 
 import base64
+import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs
 
@@ -14,6 +15,7 @@ from app.models import (
     EmailLog,
     FileObject,
     MoodleAccount,
+    MoodleAnnouncement,
     MoodleAssignment,
     MoodleCourse,
     Note,
@@ -450,6 +452,7 @@ def test_disconnect_keeps_vault_notes(
     sign_in(user)
     install(monkeypatch, FakeMoodle())
     client.post("/api/moodle/token", json={"link": _link()})
+    moodle_services.sync_all(db, notify=True)
     note = Note(owner_id=user.id, scope=NoteScope.personal, title="Saved", external_uid="italeem-file:1:abc")
     db.add(note)
     db.commit()
@@ -458,6 +461,7 @@ def test_disconnect_keeps_vault_notes(
     db.expire_all()
     assert db.scalar(select(MoodleAccount).where(MoodleAccount.user_id == user.id)) is None
     assert db.scalars(select(Task).where(Task.owner_id == user.id)).all() == []
+    assert db.scalars(select(MoodleAnnouncement)).all() == []
     assert db.get(Note, note.id) is not None
     status = client.get("/api/moodle").json()
     assert status["connected"] is False
@@ -526,6 +530,7 @@ def test_scheduled_sync_emails_new_items_once(
     assert call["to"] == "ada@example.com"
     assert "iTa'leem" in call["subject"]
     assert "Exam update" in call["html"]
+    assert "tab=announcements" in call["html"]
     assert "week2.txt" in call["html"]
     assert "85.00" in call["html"]
     assert "Hybrid week" not in call["html"]
@@ -609,6 +614,109 @@ def test_scheduled_replies_and_italeem_toggle(
     assert resumed["emails"] == 1
     assert "After re-enable" in sent_emails[1]["html"]
     assert "Muted update" not in sent_emails[1]["html"]
+
+
+def test_announcements_mirror_and_read_state(
+    client: TestClient,
+    db: DbSession,
+    make_user,
+    sign_in,
+    monkeypatch,
+) -> None:
+    user = make_user(db, email="ada@example.com")
+    sign_in(user)
+    fake = FakeMoodle()
+    install(monkeypatch, fake)
+    assert client.post("/api/moodle/token", json={"link": _link()}).status_code == 200
+    moodle_services.sync_all(db, notify=True)
+
+    db.expire_all()
+    rows = db.scalars(select(MoodleAnnouncement).where(MoodleAnnouncement.user_id == user.id)).all()
+    assert len(rows) == 1
+    assert rows[0].subject == "Hybrid week"
+    assert "Classes are online" in rows[0].body
+    assert rows[0].read_at is not None  # first scan baselines existing announcements
+    assert rows[0].url.endswith("/mod/forum/discuss.php?d=31")
+
+    course_id = client.get("/api/moodle/courses").json()[0]["id"]
+    response = client.get(f"/api/moodle/courses/{course_id}/announcements")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["unread"] == 0
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["subject"] == "Hybrid week"
+    assert item["read"] is True
+    assert item["courseShortname"] == "LAWS1010"
+    assert body["syncedAt"] is not None
+
+    fake.discussions[11].append(
+        {
+            "id": 32,
+            "name": "Exam update",
+            "message": "<p>Bring a calculator.</p>",
+            "userid": 9,
+            "userfullname": "Dr Lee",
+            "usermodified": 9,
+            "numreplies": 0,
+            "created": _now(0),
+            "modified": _now(0),
+            "timemodified": _now(0),
+        }
+    )
+    fake.forums[0]["numdiscussions"] = 2
+    refreshed = client.get(f"/api/moodle/courses/{course_id}/announcements?refresh=1").json()
+    assert len(refreshed["items"]) == 2
+    assert refreshed["unread"] == 1
+    new_item = next(item for item in refreshed["items"] if item["discussionId"] == 32)
+    assert new_item["subject"] == "Exam update"
+    assert new_item["read"] is False
+
+    marked = client.post("/api/moodle/announcements/read", json={"ids": [new_item["id"]]})
+    assert marked.status_code == 200, marked.text
+    assert marked.json()["updated"] == 1
+    assert marked.json()["unread"] == 0
+    again = client.get(f"/api/moodle/courses/{course_id}/announcements").json()
+    assert next(item for item in again["items"] if item["discussionId"] == 32)["read"] is True
+
+    # An edit/reply refresh keeps the earlier announcement read.
+    fake.discussions[11][0]["numreplies"] = 1
+    fake.discussions[11][0]["timemodified"] = _now(0)
+    client.get(f"/api/moodle/courses/{course_id}/announcements?refresh=1")
+    db.expire_all()
+    first = db.get(MoodleAnnouncement, uuid.UUID(item["id"]))
+    assert first is not None
+    assert first.read_at is not None
+    assert first.replies == 1
+
+    # A genuinely new announcement is unread and lights up the course card.
+    fake.discussions[11].append(
+        {
+            "id": 33,
+            "name": "Class cancelled",
+            "message": "<p>See you next week.</p>",
+            "userid": 9,
+            "userfullname": "Dr Lee",
+            "usermodified": 9,
+            "numreplies": 0,
+            "created": _now(0),
+            "modified": _now(0),
+            "timemodified": _now(0),
+        }
+    )
+    fake.forums[0]["numdiscussions"] = 3
+    latest = client.get(f"/api/moodle/courses/{course_id}/announcements?refresh=1").json()
+    assert latest["unread"] == 1
+    global_feed = client.get("/api/moodle/announcements").json()
+    assert len(global_feed["items"]) == 3
+    assert global_feed["unread"] == 1
+    assert global_feed["items"][0]["courseShortname"] == "LAWS1010"
+    assert client.get("/api/moodle/courses").json()[0]["unreadAnnouncements"] == 1
+
+    # Another user cannot read this course.
+    other = make_user(db, name="Maya", email="maya@example.com")
+    sign_in(other)
+    assert client.get(f"/api/moodle/courses/{course_id}/announcements").status_code == 404
 
 
 def test_bad_token_is_a_sentence(client: TestClient, db: DbSession, make_user, sign_in, monkeypatch) -> None:

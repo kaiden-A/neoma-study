@@ -9,6 +9,9 @@ import { putToR2 } from "@/lib/files";
 import { eventType } from "@/lib/markers";
 import { applyTheme } from "@/lib/theme";
 import type {
+  Announcement,
+  AnnouncementReadResponse,
+  AnnouncementsResponse,
   AnswerInput,
   Bootstrap,
   CalendarEvent,
@@ -65,6 +68,12 @@ export interface StudyStats {
   openRequests: number;
   topicCount: number;
   nextSession: CalendarEvent | null;
+}
+
+export interface AnnouncementMeta {
+  unread: number;
+  syncedAt: number | null;
+  warning: string | null;
 }
 
 export interface GroupCreateInput {
@@ -127,6 +136,8 @@ interface StoreValue {
   notes: Note[];
   events: CalendarEvent[];
   courses: Course[];
+  announcements: Announcement[];
+  announcementMeta: Record<string, AnnouncementMeta>;
   notifications: NotificationItem[];
   flashcards: Flashcard[];
   study: StudyOverview | null;
@@ -142,6 +153,13 @@ interface StoreValue {
   loadCourse: (id: string, refresh?: boolean) => Promise<CourseDetail>;
   loadAssignments: (id: string) => Promise<CourseAssignment[]>;
   loadGrades: (id: string) => Promise<CourseGrade[]>;
+  loadAnnouncements: (courseId?: string, refresh?: boolean) => Promise<AnnouncementsResponse>;
+  markAnnouncementsRead: (input: {
+    ids?: string[];
+    courseId?: string;
+    all?: boolean;
+  }) => Promise<void>;
+  announcementsForCourse: (courseId: string) => Announcement[];
   connectMoodle: (link: string) => Promise<MoodleStatus>;
   syncMoodle: () => Promise<MoodleSyncResult>;
   disconnectMoodle: () => Promise<void>;
@@ -308,6 +326,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [courseDetails, setCourseDetails] = useState<Record<string, CourseDetail>>({});
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcementMeta, setAnnouncementMeta] = useState<Record<string, AnnouncementMeta>>({});
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [study, setStudy] = useState<StudyOverview | null>(null);
@@ -638,6 +658,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       notes,
       events,
       courses,
+      announcements,
+      announcementMeta,
       notifications,
       flashcards,
       study,
@@ -673,6 +695,149 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         );
         return grades;
       },
+      loadAnnouncements: async (courseId, refresh = false) => {
+        const query = courseId
+          ? `/api/moodle/courses/${courseId}/announcements${refresh ? "?refresh=1" : ""}`
+          : "/api/moodle/announcements";
+        const response = await apiGet<AnnouncementsResponse>(query);
+        const key = courseId ?? "all";
+        setAnnouncements((current) => {
+          const merged = courseId
+            ? [...current.filter((item) => item.courseId !== courseId), ...response.items]
+            : response.items;
+          return merged.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+        });
+        setAnnouncementMeta((current) => ({
+          ...current,
+          [key]: {
+            unread: response.unread,
+            syncedAt: response.syncedAt,
+            warning: response.warning,
+          },
+        }));
+        if (courseId) {
+          setCourses((current) =>
+            current.map((course) =>
+              course.id === courseId
+                ? { ...course, unreadAnnouncements: response.unread }
+                : course,
+            ),
+          );
+        }
+        return response;
+      },
+      markAnnouncementsRead: async (input) => {
+        const beforeAnnouncements = announcements;
+        const beforeCourses = courses;
+        const beforeMeta = announcementMeta;
+        const matches = (item: Announcement) =>
+          input.all === true ||
+          (input.ids?.includes(item.id) ?? false) ||
+          (input.courseId !== undefined && item.courseId === input.courseId);
+        const changed = announcements.filter((item) => !item.read && matches(item));
+        const nextAnnouncements = announcements.map((item) =>
+          matches(item) ? { ...item, read: true } : item,
+        );
+        const nextCourses = courses.map((course) => {
+          if (input.all) return { ...course, unreadAnnouncements: 0 };
+          if (input.courseId) {
+            return course.id === input.courseId
+              ? { ...course, unreadAnnouncements: 0 }
+              : course;
+          }
+          const count = changed.filter((item) => item.courseId === course.id).length;
+          return count
+            ? {
+                ...course,
+                unreadAnnouncements: Math.max(0, course.unreadAnnouncements - count),
+              }
+            : course;
+        });
+        const nextMeta: Record<string, AnnouncementMeta> = { ...announcementMeta };
+        if (input.all) {
+          for (const key of Object.keys(nextMeta)) {
+            nextMeta[key] = { ...nextMeta[key], unread: 0 };
+          }
+          nextMeta.all = {
+            ...(nextMeta.all ?? { unread: 0, syncedAt: null, warning: null }),
+            unread: 0,
+          };
+        } else if (input.courseId) {
+          nextMeta[input.courseId] = {
+            ...(nextMeta[input.courseId] ?? {
+              unread: 0,
+              syncedAt: null,
+              warning: null,
+            }),
+            unread: 0,
+          };
+          if (nextMeta.all) {
+            nextMeta.all = {
+              ...nextMeta.all,
+              unread: Math.max(0, nextMeta.all.unread - changed.length),
+            };
+          }
+        } else {
+          const byCourse = new Map<string, number>();
+          for (const item of changed) {
+            byCourse.set(item.courseId, (byCourse.get(item.courseId) ?? 0) + 1);
+          }
+          for (const [courseId, count] of byCourse) {
+            const meta = nextMeta[courseId];
+            if (meta) {
+              nextMeta[courseId] = {
+                ...meta,
+                unread: Math.max(0, meta.unread - count),
+              };
+            }
+          }
+          if (nextMeta.all) {
+            nextMeta.all = {
+              ...nextMeta.all,
+              unread: Math.max(0, nextMeta.all.unread - changed.length),
+            };
+          }
+        }
+        setAnnouncements(nextAnnouncements);
+        setCourses(nextCourses);
+        setAnnouncementMeta(nextMeta);
+        try {
+          const response = await apiPost<AnnouncementReadResponse>(
+            "/api/moodle/announcements/read",
+            input,
+          );
+          const key = input.courseId ?? "all";
+          setAnnouncementMeta((current) => ({
+            ...current,
+            [key]: {
+              ...(current[key] ?? { unread: 0, syncedAt: null, warning: null }),
+              unread: response.unread,
+            },
+          }));
+          if (input.courseId) {
+            setCourses((current) =>
+              current.map((course) =>
+                course.id === input.courseId
+                  ? { ...course, unreadAnnouncements: response.unread }
+                  : course,
+              ),
+            );
+          }
+          if (input.all) {
+            setCourses((current) =>
+              current.map((course) => ({ ...course, unreadAnnouncements: 0 })),
+            );
+          }
+        } catch (error) {
+          setAnnouncements(beforeAnnouncements);
+          setCourses(beforeCourses);
+          setAnnouncementMeta(beforeMeta);
+          notifyFailure();
+          throw error;
+        }
+      },
+      announcementsForCourse: (courseId) =>
+        announcements.filter((item) => item.courseId === courseId),
       loadAssignments: async (id) => {
         const assignments = await apiGet<CourseAssignment[]>(
           `/api/moodle/courses/${id}/assignments`,
@@ -688,6 +853,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           { link },
         );
         setCourseDetails({});
+        setAnnouncements([]);
+        setAnnouncementMeta({});
         await refresh();
         return result.status;
       },
@@ -701,6 +868,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await apiDelete("/api/moodle");
         setCourses([]);
         setCourseDetails({});
+        setAnnouncements([]);
+        setAnnouncementMeta({});
         await refresh();
       },
       saveCourseFile: async (courseId, cmid, fileIndex = 0) => {
@@ -1154,6 +1323,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     events,
     courses,
     courseDetails,
+    announcements,
+    announcementMeta,
     notifications,
     flashcards,
     study,

@@ -40,7 +40,7 @@ Moodle 5.2-era core (`2026042000.02`).
 | `gradereport_user_get_grade_items` | cached grades tab |
 | `mod_assign_get_submission_status` | submitted/draft/not-submitted state (10 min TTL) |
 | `mod_forum_get_forums_by_courses` | forum names/types for scheduled announcement emails |
-| `mod_forum_get_forum_discussions` | new announcements and reply counts |
+| `mod_forum_get_forum_discussions` | `moodle_announcements` (plain text) + update emails |
 | `pluginfile.php` + `?token=` | "Save to vault": R2 copy + note + text extraction |
 
 Assignment due dates win over the calendar's `assign` events (those are
@@ -142,6 +142,34 @@ The scan makes one forums call, one discussion call per forum with posts, one
 outline call per active course and one grade call per course every six hours.
 It is sequential, so keep the endpoint on the direct Cloud Run URL and watch
 the run count as users are added.
+
+## Announcements
+
+Forum discussions are mirrored into `moodle_announcements` as plain text:
+subject, body, author, posted date, reply count, forum name/type, the original
+iTa'leem discussion URL and `read_at`. The unique key is
+`(user_id, discussion_id)`, so a scheduled scan or a course-tab refresh upserts
+the same row without duplicating it.
+
+The UI has a fourth tab on each course page and a global inbox at
+`/courses/announcements`, plus a latest strip on `/courses`. The tab refreshes
+that course's forums live when its cache is older than 10 minutes; the global
+page reads the database (the two-hour scan keeps it fresh). Unread dots,
+`Mark all read`, and course-card counts are all driven by `read_at`.
+
+Endpoints:
+
+- `GET /api/moodle/courses/{id}/announcements` (`?refresh=1` forces a live fetch)
+- `GET /api/moodle/announcements` (`courseId`, `unread`, `limit`, `offset`)
+- `POST /api/moodle/announcements/read` (`{ids?}`, `{courseId?}`, `{all?}`)
+
+Announcement emails link to
+`/courses/{id}?tab=announcements&discussion={discussionId}`; the course page
+opens that tab, scrolls to the item and marks it read. The card keeps an
+**Open in iTa'leem** link for the full thread. Only the first post is mirrored:
+IIUM's `mod_forum_get_discussion_posts` returns an access error on the news
+forums, so replies are represented by their count and by the source link, not
+by their text.
 
 ## MCP tools
 

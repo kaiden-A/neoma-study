@@ -404,6 +404,20 @@ G needs B for the read tools and D for `italeem_save_file`; E supplies grades.
       verified with a manual run (`HTTP 200`).
 - [ ] Verify one real email when iTa'leem posts a new announcement, file or grade.
 
+#### Phase I — announcements inbox (built 29 Oct 2026)
+
+- [x] `moodle_announcements` table + `moodle_courses.announcements_at`; hand-written
+      migration `c8f4a1d7e920` (applied).
+- [x] Scheduled scan upserts forum discussions (plain text, author, date, replies,
+      source URL, `read_at`); course-tab refresh fetches one course live.
+- [x] `GET /api/moodle/courses/{id}/announcements`,
+      `GET /api/moodle/announcements`, `POST /api/moodle/announcements/read`;
+      `CourseOut.unreadAnnouncements`.
+- [x] Course page fourth tab, `/courses/announcements` global inbox, latest strip
+      on `/courses`, unread dots and mark-all-read.
+- [x] Email announcement links deep-link into the Neoma course tab.
+- [ ] Deploy the new server + client build and verify the inbox against live data.
+
 A–D is the "all in one place to study" core (≈7–9 d); E–G is polish and agent
 access (≈4–5 d).
 

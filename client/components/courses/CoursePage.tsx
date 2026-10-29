@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { AnnouncementsList } from "@/components/courses/Announcements";
 import { EmptyState } from "@/components/ui/bits";
 import { useOverlays } from "@/components/ui/Overlays";
 import { fmtBytes, fmtDay, fmtRelative } from "@/lib/dates";
 import { useStore } from "@/lib/store";
 import type { CourseDetail, CourseModule, CourseSection } from "@/lib/types";
 
-type Tab = "outline" | "assignments" | "grades";
+type Tab = "outline" | "assignments" | "announcements" | "grades";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "outline", label: "Outline" },
   { id: "assignments", label: "Assignments" },
+  { id: "announcements", label: "Announcements" },
   { id: "grades", label: "Grades" },
 ];
 
@@ -47,17 +49,31 @@ function moduleIcon(module: CourseModule): string {
   return ICONS[module.modname] ?? "fa-cube";
 }
 
-export function CoursePage({ courseId }: { courseId: string }) {
+export function CoursePage({
+  courseId,
+  initialTab = "outline",
+  focusDiscussion = null,
+}: {
+  courseId: string;
+  initialTab?: Tab;
+  focusDiscussion?: number | null;
+}) {
   const store = useStore();
   const { toast } = useOverlays();
-  const [tab, setTab] = useState<Tab>("outline");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [busy, setBusy] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loaded = useRef(false);
   const gradesLoaded = useRef(false);
   const assignmentsLoaded = useRef(false);
+  const announcementsLoaded = useRef(false);
+  const focusHandled = useRef(false);
   const detail = store.courseDetail(courseId);
+  const announcements = store.announcementsForCourse(courseId);
+  const announcementMeta = store.announcementMeta[courseId];
+  const unreadAnnouncements =
+    announcementMeta?.unread ?? detail?.course.unreadAnnouncements ?? 0;
 
   useEffect(() => {
     if (loaded.current || !store.ready) return;
@@ -100,6 +116,31 @@ export function CoursePage({ courseId }: { courseId: string }) {
     });
   }, [tab, detail, courseId, store, toast]);
 
+  useEffect(() => {
+    if (tab !== "announcements" || !detail || announcementsLoaded.current) return;
+    announcementsLoaded.current = true;
+    void store.loadAnnouncements(courseId).catch((caught) => {
+      toast(caught instanceof Error ? caught.message : "Could not load announcements.", {
+        kind: "danger",
+      });
+    });
+  }, [tab, detail, courseId, store, toast]);
+
+  useEffect(() => {
+    if (!focusDiscussion || focusHandled.current) return;
+    const target = announcements.find((item) => item.discussionId === focusDiscussion);
+    if (!target) return;
+    focusHandled.current = true;
+    document
+      .getElementById(`announcement-${focusDiscussion}`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (!target.read) {
+      void store
+        .markAnnouncementsRead({ ids: [target.id] })
+        .catch(() => undefined);
+    }
+  }, [announcements, focusDiscussion, store]);
+
   async function save(module: CourseModule, index: number) {
     setBusy(module.cmid);
     try {
@@ -119,6 +160,10 @@ export function CoursePage({ courseId }: { courseId: string }) {
       await store.loadCourse(courseId, true);
       gradesLoaded.current = false;
       assignmentsLoaded.current = false;
+      announcementsLoaded.current = tab === "announcements";
+      if (tab === "announcements") {
+        await store.loadAnnouncements(courseId, true);
+      }
       toast("Course refreshed", { kind: "success" });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : "Could not refresh the course.", {
@@ -210,7 +255,7 @@ export function CoursePage({ courseId }: { courseId: string }) {
         </div>
       ) : null}
 
-      <div className="nm-seg nm-seg--wide" role="tablist" aria-label="Course view">
+      <div className="nm-seg nm-seg--wide nm-course-tabs" role="tablist" aria-label="Course view">
         {TABS.map((item) => (
           <button
             key={item.id}
@@ -220,7 +265,9 @@ export function CoursePage({ courseId }: { courseId: string }) {
             className={`nm-seg-btn${tab === item.id ? " is-active" : ""}`}
             onClick={() => setTab(item.id)}
           >
-            {item.label}
+            {item.id === "announcements" && unreadAnnouncements > 0
+              ? `Announcements (${unreadAnnouncements})`
+              : item.label}
           </button>
         ))}
       </div>
@@ -229,6 +276,25 @@ export function CoursePage({ courseId }: { courseId: string }) {
         <Outline sections={detail.sections} busy={busy} onSave={save} />
       ) : tab === "assignments" ? (
         <Assignments detail={detail} />
+      ) : tab === "announcements" ? (
+        <AnnouncementsList
+          items={announcements}
+          unread={unreadAnnouncements}
+          syncedAt={announcementMeta?.syncedAt ?? null}
+          warning={announcementMeta?.warning ?? null}
+          loading={!announcementMeta && announcements.length === 0}
+          focusDiscussion={focusDiscussion}
+          onMarkRead={(id) => {
+            void store
+              .markAnnouncementsRead({ ids: [id] })
+              .catch(() => undefined);
+          }}
+          onMarkAll={() => {
+            void store
+              .markAnnouncementsRead({ courseId })
+              .catch(() => undefined);
+          }}
+        />
       ) : (
         <Grades detail={detail} />
       )}

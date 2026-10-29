@@ -11,6 +11,9 @@ from ..dependencies import require_user
 from ..models import User
 from ..models.users import utcnow
 from ..schemas.moodle import (
+    AnnouncementReadIn,
+    AnnouncementReadOut,
+    AnnouncementsOut,
     AssignmentOut,
     CourseDetailOut,
     CourseOut,
@@ -68,10 +71,45 @@ def disconnect(user: User = Depends(require_user), db: DbSession = Depends(get_d
     return {"ok": True}
 
 
+@router.get("/announcements", response_model=AnnouncementsOut)
+def announcements(
+    course_id: uuid.UUID | None = Query(default=None, alias="courseId"),
+    unread: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+) -> AnnouncementsOut:
+    if course_id is not None:
+        moodle_services.require_course(db, user, course_id)
+    return moodle_services.all_announcements(
+        db,
+        user,
+        course_id=course_id,
+        unread=unread,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/announcements/read", response_model=AnnouncementReadOut)
+def read_announcements(
+    data: AnnouncementReadIn,
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+) -> AnnouncementReadOut:
+    updated, unread = moodle_services.mark_announcements_read(
+        db,
+        user,
+        ids=data.ids or None,
+        course_id=data.courseId,
+        all=data.all,
+    )
+    return AnnouncementReadOut(updated=updated, unread=unread)
+
+
 @router.get("/courses", response_model=list[CourseOut])
-def list_courses(
-    user: User = Depends(require_user), db: DbSession = Depends(get_db)
-) -> list[CourseOut]:
+def list_courses(user: User = Depends(require_user), db: DbSession = Depends(get_db)) -> list[CourseOut]:
     return moodle_services.list_courses(db, user)
 
 
@@ -130,3 +168,14 @@ def assignments(
     course = moodle_services.require_course(db, user, course_id)
     moodle_services.refresh_submission_status(db, user, course, force=refresh)
     return moodle_services.assignments_for(db, user, course)
+
+
+@router.get("/courses/{course_id}/announcements", response_model=AnnouncementsOut)
+def course_announcements(
+    course_id: uuid.UUID,
+    refresh: bool = Query(default=False),
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+) -> AnnouncementsOut:
+    course = moodle_services.require_course(db, user, course_id)
+    return moodle_services.announcements_for(db, user, course, refresh=refresh)

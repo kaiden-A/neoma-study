@@ -193,6 +193,10 @@ server you did not start.
   copied into R2/vault on demand (`POST /api/moodle/courses/{id}/save`), then the
   normal note/extraction/search/viewer path applies. `mcp_italeem.py` adds the
   `italeem_*` MCP tools. Read-only: never submit, post or message.
+  Forum discussions are mirrored into `moodle_announcements` (plain text,
+  `read_at`); the course page has an Announcements tab and
+  `/courses/announcements` is the global inbox. The email deep-links into that
+  tab; replies stay in iTa'leem because IIUM's post endpoint is unreliable.
   The maintenance sync (`POST /api/maintenance/sync-moodle?notify=true`) also
   scans forums, files and grades; `moodle_accounts.seen` JSONB is the
   idempotency state (first scan is a silent baseline) and

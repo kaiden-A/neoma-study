@@ -21,13 +21,15 @@ from urllib.parse import unquote, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
 from ..config import get_settings
 from ..models import (
     FileObject,
     MoodleAccount,
+    MoodleAnnouncement,
     MoodleAssignment,
     MoodleCourse,
     Note,
@@ -40,6 +42,8 @@ from ..models import (
 from ..models.enums import NoteScope, NoteType
 from ..models.users import utcnow
 from ..schemas.moodle import (
+    AnnouncementOut,
+    AnnouncementsOut,
     AssignmentOut,
     CourseDetailOut,
     CourseOut,
@@ -70,6 +74,7 @@ SYNC_PAST_DAYS = 1
 SYNC_FUTURE_DAYS = 120
 AUTO_SYNC_WINDOW = timedelta(minutes=10)
 OUTLINE_TTL = timedelta(minutes=60)
+ANNOUNCEMENTS_TTL = timedelta(minutes=10)
 GRADES_TTL = timedelta(hours=6)
 SUBMISSION_TTL = timedelta(minutes=10)
 MAX_FILE_BYTES = 50 * 1024 * 1024
@@ -947,7 +952,6 @@ def _forum_item(
     forum: dict,
     course: MoodleCourse,
     discussion: dict,
-    account: MoodleAccount,
 ) -> email_services.ItaleemItem:
     discussion_id = int(discussion.get("id") or 0)
     is_news = str(forum.get("type") or "") == "news"
@@ -965,7 +969,7 @@ def _forum_item(
         "group": "Announcements" if is_news else "Forum posts",
         "title": str(discussion.get("name") or discussion.get("subject") or "iTa'leem post")[:300],
         "body": body,
-        "url": (f"{account.wwwroot or MOODLE_WWWROOT}/mod/forum/discuss.php?d={discussion_id}"),
+        "url": f"/courses/{course.id}?tab=announcements&discussion={discussion_id}",
         "tone": "muted",
     }
 
@@ -1021,7 +1025,7 @@ def _forum_reply_item(
         "group": "Announcements" if is_news else "Forum posts",
         "title": f"New reply in {subject}",
         "body": body,
-        "url": (f"{account.wwwroot or MOODLE_WWWROOT}/mod/forum/discuss.php?d={discussion_id}"),
+        "url": f"/courses/{course.id}?tab=announcements&discussion={discussion_id}",
         "tone": "muted",
     }
 
@@ -1034,13 +1038,16 @@ def _forum_state(discussion: dict) -> dict:
 
 
 def _collect_forums(
+    db: DbSession,
     api: MoodleClient,
     account: MoodleAccount,
+    user: User,
     courses: list[MoodleCourse],
     forums: list[dict],
     state: _SeenState,
     items: list[email_services.ItaleemItem],
     functions: set[str],
+    now: datetime,
 ) -> None:
     me = int(account.moodle_user_id or 0)
     by_moodle = {course.course_id: course for course in courses}
@@ -1067,6 +1074,17 @@ def _collect_forums(
             )
             continue
 
+        _upsert_announcements(
+            db,
+            user,
+            account,
+            course,
+            forum,
+            discussions,
+            now,
+            baseline=course.announcements_at is None,
+        )
+
         if forum_id not in state.forum_ready:
             for discussion in discussions:
                 discussion_id = str(discussion.get("id") or "")
@@ -1085,7 +1103,7 @@ def _collect_forums(
             if old is None:
                 author = int(discussion.get("userid") or 0)
                 if not me or author != me:
-                    items.append(_forum_item(forum, course, discussion, account))
+                    items.append(_forum_item(forum, course, discussion))
                 state.forums[discussion_id] = _forum_state(discussion)
                 continue
             if replies > int(old.get("replies") or 0):
@@ -1292,14 +1310,24 @@ def collect_updates(db: DbSession, user: User, account: MoodleAccount) -> list[e
 
     _collect_deadlines(db, user, courses, state, items, moment)
 
-    if active and "mod_forum_get_forums_by_courses" in functions:
+    can_forums = (
+        "mod_forum_get_forums_by_courses" in functions and "mod_forum_get_forum_discussions" in functions
+    )
+    if active and can_forums:
+        forums_ok = False
         try:
             forums = api.forums([course.course_id for course in active])
+            forums_ok = True
         except (MoodleError, httpx.HTTPError) as exc:
             log.warning("iTa'leem forums failed for user %s: %s", user.id, exc)
             forums = []
-        if forums and "mod_forum_get_forum_discussions" in functions:
-            _collect_forums(api, account, active, forums, state, items, functions)
+        if forums:
+            _collect_forums(db, api, account, user, active, forums, state, items, functions, moment)
+        if forums_ok:
+            # The UI uses this as its "announcements are current" marker, even
+            # for a course with no forums or no discussions.
+            for course in active:
+                course.announcements_at = moment
 
     if active and "core_course_get_contents" in functions:
         _collect_files(api, account, active, state, items, moment)
@@ -1388,7 +1416,293 @@ def _deadlines_by_course(db: DbSession, user_id: uuid.UUID) -> dict[uuid.UUID, t
     return result
 
 
-def course_out(db: DbSession, course: MoodleCourse) -> CourseOut:
+def _announcement_url(account: MoodleAccount, discussion_id: int) -> str:
+    return f"{account.wwwroot or MOODLE_WWWROOT}/mod/forum/discuss.php?d={discussion_id}"
+
+
+def _upsert_announcements(
+    db: DbSession,
+    user: User,
+    account: MoodleAccount,
+    course: MoodleCourse,
+    forum: dict,
+    discussions: list[dict],
+    now: datetime,
+    *,
+    baseline: bool = False,
+) -> None:
+    """Mirror fetched forum discussions into the Announcements table.
+
+    Runs on the scheduled scan and on a course-tab refresh. It deliberately
+    does not touch `read_at` on conflict: an edit or a new reply keeps the
+    user's read state. `baseline` is the first check of a course, so its
+    existing announcements start read instead of flooding the unread badge.
+    """
+    forum_id = int(forum.get("id") or 0)
+    forum_name = str(forum.get("name") or "")[:200]
+    forum_type = str(forum.get("type") or "")[:40]
+    values: list[dict] = []
+    for discussion in discussions:
+        try:
+            discussion_id = int(discussion.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not discussion_id:
+            continue
+        values.append(
+            {
+                "id": uuid.uuid4(),
+                "user_id": user.id,
+                "course_id": course.id,
+                "forum_id": forum_id,
+                "discussion_id": discussion_id,
+                "forum_name": forum_name,
+                "forum_type": forum_type,
+                "subject": str(
+                    discussion.get("name") or discussion.get("subject") or "iTa'leem announcement"
+                )[:300],
+                "body": html_to_text(str(discussion.get("message") or ""), 20000),
+                "author": str(discussion.get("userfullname") or "")[:200],
+                "posted_at": _moment(discussion.get("created")),
+                "modified_at": _moment(discussion.get("timemodified") or discussion.get("modified")),
+                "replies": int(discussion.get("numreplies") or 0),
+                "url": _announcement_url(account, discussion_id),
+                "read_at": (
+                    now
+                    if baseline
+                    or (
+                        account.moodle_user_id
+                        and int(discussion.get("userid") or 0) == account.moodle_user_id
+                    )
+                    else None
+                ),
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    if not values:
+        return
+    statement = pg_insert(MoodleAnnouncement).values(values)
+    db.execute(
+        statement.on_conflict_do_update(
+            index_elements=["user_id", "discussion_id"],
+            set_={
+                "course_id": statement.excluded.course_id,
+                "forum_id": statement.excluded.forum_id,
+                "forum_name": statement.excluded.forum_name,
+                "forum_type": statement.excluded.forum_type,
+                "subject": statement.excluded.subject,
+                "body": statement.excluded.body,
+                "author": statement.excluded.author,
+                "posted_at": statement.excluded.posted_at,
+                "modified_at": statement.excluded.modified_at,
+                "replies": statement.excluded.replies,
+                "url": statement.excluded.url,
+                "updated_at": statement.excluded.updated_at,
+            },
+        )
+    )
+
+
+def _announcement_out(row: MoodleAnnouncement, course: MoodleCourse) -> AnnouncementOut:
+    return AnnouncementOut(
+        id=str(row.id),
+        courseId=str(course.id),
+        courseShortname=course.shortname,
+        courseColor=_color(course.course_id),
+        forumName=row.forum_name,
+        forumType=row.forum_type,
+        discussionId=row.discussion_id,
+        subject=row.subject or "iTa'leem announcement",
+        body=row.body,
+        author=row.author,
+        postedAt=to_ms(row.posted_at),
+        modifiedAt=to_ms(row.modified_at),
+        replies=row.replies,
+        url=row.url,
+        read=row.read_at is not None,
+    )
+
+
+def _announcement_list(
+    db: DbSession,
+    user: User,
+    *,
+    course_id: uuid.UUID | None = None,
+    unread_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[AnnouncementOut], int, int | None]:
+    filters = [MoodleAnnouncement.user_id == user.id]
+    if course_id is not None:
+        filters.append(MoodleAnnouncement.course_id == course_id)
+    else:
+        filters.append(MoodleCourse.archived.is_(False))
+    stmt = (
+        select(MoodleAnnouncement, MoodleCourse)
+        .join(MoodleCourse, MoodleAnnouncement.course_id == MoodleCourse.id)
+        .where(*filters)
+    )
+    if unread_only:
+        stmt = stmt.where(MoodleAnnouncement.read_at.is_(None))
+    rows = db.execute(
+        stmt.order_by(
+            MoodleAnnouncement.posted_at.desc().nulls_last(),
+            MoodleAnnouncement.created_at.desc(),
+        )
+        .limit(max(1, min(limit, 100)))
+        .offset(max(0, offset))
+    ).all()
+    items = [_announcement_out(row, course) for row, course in rows]
+
+    unread = int(
+        db.scalar(
+            select(func.count())
+            .select_from(MoodleAnnouncement)
+            .join(MoodleCourse, MoodleAnnouncement.course_id == MoodleCourse.id)
+            .where(*filters, MoodleAnnouncement.read_at.is_(None))
+        )
+        or 0
+    )
+
+    if course_id is not None:
+        course = db.get(MoodleCourse, course_id)
+        synced = to_ms(course.announcements_at) if course is not None else None
+    else:
+        synced = to_ms(
+            db.scalar(
+                select(func.max(MoodleCourse.announcements_at)).where(
+                    MoodleCourse.user_id == user.id,
+                    MoodleCourse.archived.is_(False),
+                )
+            )
+        )
+    return items, unread, synced
+
+
+def unread_count(db: DbSession, user_id: uuid.UUID, *, course_id: uuid.UUID | None = None) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(MoodleAnnouncement)
+        .where(
+            MoodleAnnouncement.user_id == user_id,
+            MoodleAnnouncement.read_at.is_(None),
+        )
+    )
+    if course_id is not None:
+        stmt = stmt.where(MoodleAnnouncement.course_id == course_id)
+    return int(db.scalar(stmt) or 0)
+
+
+def unread_counts(db: DbSession, user_id: uuid.UUID) -> dict[uuid.UUID, int]:
+    rows = db.execute(
+        select(MoodleAnnouncement.course_id, func.count())
+        .where(
+            MoodleAnnouncement.user_id == user_id,
+            MoodleAnnouncement.read_at.is_(None),
+        )
+        .group_by(MoodleAnnouncement.course_id)
+    ).all()
+    return {course_id: int(count) for course_id, count in rows}
+
+
+def refresh_course_announcements(db: DbSession, user: User, course: MoodleCourse) -> str | None:
+    """Fetch this course's forums now; returns a readable warning on partial failure."""
+    account = require_account(db, user)
+    functions = {str(name) for name in account.functions or []}
+    if (
+        "mod_forum_get_forums_by_courses" not in functions
+        or "mod_forum_get_forum_discussions" not in functions
+    ):
+        return "iTa'leem does not expose forum announcements for this account."
+    api = _api(db, account)
+    try:
+        forums = api.forums([course.course_id])
+    except MoodleAuthError as exc:
+        raise InvalidError(RECONNECT) from exc
+    except (MoodleError, httpx.HTTPError) as exc:
+        return str(exc) if isinstance(exc, MoodleError) else UNREACHABLE
+
+    moment = utcnow()
+    baseline = course.announcements_at is None
+    failed = 0
+    for forum in forums:
+        forum_id = int(forum.get("id") or 0)
+        if not forum_id:
+            continue
+        try:
+            discussions = api.forum_discussions(forum_id)
+        except MoodleAuthError as exc:
+            raise InvalidError(RECONNECT) from exc
+        except (MoodleError, httpx.HTTPError):
+            failed += 1
+            continue
+        _upsert_announcements(db, user, account, course, forum, discussions, moment, baseline=baseline)
+    course.announcements_at = moment
+    db.commit()
+    if failed:
+        return "Some iTa'leem forums could not be refreshed; showing what we have."
+    return None
+
+
+def announcements_for(
+    db: DbSession, user: User, course: MoodleCourse, *, refresh: bool = False
+) -> AnnouncementsOut:
+    stale = course.announcements_at is None or (
+        utcnow() - (_aware(course.announcements_at) or utcnow()) >= ANNOUNCEMENTS_TTL
+    )
+    warning = None
+    if refresh or stale:
+        warning = refresh_course_announcements(db, user, course)
+    items, unread, synced = _announcement_list(db, user, course_id=course.id)
+    return AnnouncementsOut(items=items, unread=unread, syncedAt=synced, warning=warning)
+
+
+def all_announcements(
+    db: DbSession,
+    user: User,
+    *,
+    course_id: uuid.UUID | None = None,
+    unread: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> AnnouncementsOut:
+    items, count, synced = _announcement_list(
+        db,
+        user,
+        course_id=course_id,
+        unread_only=unread,
+        limit=limit,
+        offset=offset,
+    )
+    return AnnouncementsOut(items=items, unread=count, syncedAt=synced)
+
+
+def mark_announcements_read(
+    db: DbSession,
+    user: User,
+    *,
+    ids: list[uuid.UUID] | None = None,
+    course_id: uuid.UUID | None = None,
+    all: bool = False,
+) -> tuple[int, int]:
+    filters = [
+        MoodleAnnouncement.user_id == user.id,
+        MoodleAnnouncement.read_at.is_(None),
+    ]
+    if ids:
+        filters.append(MoodleAnnouncement.id.in_(ids))
+    elif course_id is not None:
+        filters.append(MoodleAnnouncement.course_id == course_id)
+    elif not all:
+        return 0, unread_count(db, user.id, course_id=course_id)
+    result = db.execute(update(MoodleAnnouncement).where(*filters).values(read_at=utcnow()))
+    db.commit()
+    updated = getattr(result, "rowcount", 0) or 0
+    return int(updated), unread_count(db, user.id, course_id=course_id)
+
+
+def course_out(db: DbSession, course: MoodleCourse, unread_announcements: int | None = None) -> CourseOut:
     deadlines = _deadlines_by_course(db, course.user_id)
     count, first = deadlines.get(course.id, (0, None))
     return CourseOut(
@@ -1401,6 +1715,11 @@ def course_out(db: DbSession, course: MoodleCourse) -> CourseOut:
         subjectId=str(course.subject_id) if course.subject_id else None,
         openDeadlines=count,
         nextDueAt=to_ms(first),
+        unreadAnnouncements=(
+            unread_announcements
+            if unread_announcements is not None
+            else unread_count(db, course.user_id, course_id=course.id)
+        ),
         archived=course.archived,
     )
 
@@ -1412,6 +1731,7 @@ def list_courses(db: DbSession, user: User) -> list[CourseOut]:
         .order_by(MoodleCourse.fullname.asc())
     ).all()
     deadlines = _deadlines_by_course(db, user.id)
+    unread = unread_counts(db, user.id)
     output: list[CourseOut] = []
     for course in rows:
         count, first = deadlines.get(course.id, (0, None))
@@ -1426,6 +1746,7 @@ def list_courses(db: DbSession, user: User) -> list[CourseOut]:
                 subjectId=str(course.subject_id) if course.subject_id else None,
                 openDeadlines=count,
                 nextDueAt=to_ms(first),
+                unreadAnnouncements=unread.get(course.id, 0),
                 archived=course.archived,
             )
         )

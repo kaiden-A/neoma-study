@@ -1,5 +1,7 @@
 """iTa'leem API shapes (camelCase fields, ms timestamps)."""
 
+import uuid
+
 from pydantic import BaseModel, Field
 
 
@@ -38,6 +40,7 @@ class CourseOut(BaseModel):
     subjectId: str | None = None
     openDeadlines: int = 0
     nextDueAt: int | None = None
+    unreadAnnouncements: int = 0
     archived: bool = False
 
 
@@ -85,6 +88,42 @@ class GradeOut(BaseModel):
     percentage: str
     feedback: str
     cmid: int | None = None
+
+
+class AnnouncementOut(BaseModel):
+    id: str
+    courseId: str
+    courseShortname: str
+    courseColor: str
+    forumName: str
+    forumType: str
+    discussionId: int
+    subject: str
+    body: str
+    author: str
+    postedAt: int | None = None
+    modifiedAt: int | None = None
+    replies: int = 0
+    url: str
+    read: bool = False
+
+
+class AnnouncementsOut(BaseModel):
+    items: list[AnnouncementOut] = Field(default_factory=list)
+    unread: int = 0
+    syncedAt: int | None = None
+    warning: str | None = None
+
+
+class AnnouncementReadIn(BaseModel):
+    ids: list[uuid.UUID] = Field(default_factory=list)
+    courseId: uuid.UUID | None = None
+    all: bool = False
+
+
+class AnnouncementReadOut(BaseModel):
+    updated: int = 0
+    unread: int = 0
 
 
 class CourseDetailOut(BaseModel):
