@@ -416,7 +416,8 @@ G needs B for the read tools and D for `italeem_save_file`; E supplies grades.
 - [x] Course page fourth tab, `/courses/announcements` global inbox, latest strip
       on `/courses`, unread dots and mark-all-read.
 - [x] Email announcement links deep-link into the Neoma course tab.
-- [ ] Deploy the new server + client build and verify the inbox against live data.
+- [x] Deployed server + client; live API returned 25 announcements, course tab 7,
+      scheduler `HTTP 200`, maintenance scan `updates:0, emails:0`.
 
 A–D is the "all in one place to study" core (≈7–9 d); E–G is polish and agent
 access (≈4–5 d).
