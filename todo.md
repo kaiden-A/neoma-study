@@ -400,8 +400,9 @@ G needs B for the read tools and D for `italeem_save_file`; E supplies grades.
 - [x] Cloud Scheduler every 2 hours (direct Cloud Run URL, not GitHub Actions:
       public-repo schedules auto-disable after 60 days without activity).
 - [x] Migration applied to `public`; Cloud Scheduler job `neoma-sync-italeem`
-      created (every 2 hours, `Asia/Kuala_Lumpur`, direct Cloud Run URL).
-- [ ] Deploy the new server image, then verify one real email against iTa'leem.
+      created (every 2 hours, `Asia/Kuala_Lumpur`, direct Cloud Run URL) and
+      verified with a manual run (`HTTP 200`).
+- [ ] Verify one real email when iTa'leem posts a new announcement, file or grade.
 
 A–D is the "all in one place to study" core (≈7–9 d); E–G is polish and agent
 access (≈4–5 d).
