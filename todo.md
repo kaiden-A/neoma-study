@@ -383,6 +383,26 @@ trigger).
 
 G needs B for the read tools and D for `italeem_save_file`; E supplies grades.
 
+#### Phase H — scheduled update emails (built 29 Oct 2026)
+
+- [x] `moodle_accounts.seen` JSONB + hand-written Alembic migration: per-course
+      and per-forum baselines, seen discussion IDs/reply counts, file UIDs,
+      grade fingerprints and imported task UIDs.
+- [x] `moodle_services.collect_updates`: new announcements (full first post),
+      reply counts, new outline files, item-level grade changes and imported
+      deadlines. First scan per course/forum is a silent baseline. IIUM's
+      `mod_forum_get_discussion_posts` is best-effort; reply text may be absent.
+- [x] `email_services.send_italeem_update` + `italeem.html/.txt`: one batched
+      email, `kind="italeem"`, deduped by item keys.
+- [x] `kinds.italeem` setting, unsubscribe, Settings toggle and client types.
+- [x] `POST /api/maintenance/sync-moodle?notify=true` and
+      `scripts/sync_moodle.py --notify`.
+- [x] Cloud Scheduler every 2 hours (direct Cloud Run URL, not GitHub Actions:
+      public-repo schedules auto-disable after 60 days without activity).
+- [x] Migration applied to `public`; Cloud Scheduler job `neoma-sync-italeem`
+      created (every 2 hours, `Asia/Kuala_Lumpur`, direct Cloud Run URL).
+- [ ] Deploy the new server image, then verify one real email against iTa'leem.
+
 A–D is the "all in one place to study" core (≈7–9 d); E–G is polish and agent
 access (≈4–5 d).
 

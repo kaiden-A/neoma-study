@@ -1,0 +1,14 @@
+{% if heading %}{{ heading }}{% endif %}
+{{ count }} new thing{% if count != 1 %}s{% endif %} since your last iTa'leem sync.
+
+{% for group in groups %}== {{ group.label }} ({{ group.entries|length }}) ==
+{% for item in group.entries %}- {{ item.title }}
+{% if item.body %}  {{ item.body }}
+{% endif %}{% if item.url %}  {{ item.url }}
+{% endif %}{% endfor %}
+{% endfor %}Open courses: {{ courses_url }}
+
+Change what lands here any time in Settings -> Notifications: {{ settings_url }}
+
+--
+Neoma · Study OS

@@ -41,12 +41,13 @@ def sync_google(
 @router.post("/maintenance/sync-moodle")
 def sync_moodle(
     dry_run: bool = Query(default=False),
+    notify: bool = Query(default=True),
     x_cleanup_secret: str | None = Header(default=None),
     db: DbSession = Depends(get_db),
 ) -> dict[str, int]:
     """Drives iTa'leem sync from a scheduler. Secret header only."""
     _require_secret(x_cleanup_secret)
-    return moodle_services.sync_all(db, dry_run=dry_run)
+    return moodle_services.sync_all(db, dry_run=dry_run, notify=notify)
 
 
 @router.post("/maintenance/cleanup")
@@ -83,7 +84,14 @@ def unsubscribe(
 
     patch = settings_services.UserSettingsPatch()
     patch.kinds = settings_services.NotificationKinds(
-        overdue=False, dueSoon=False, assigned=False, sessions=False, exams=False, notes=False
+        overdue=False,
+        dueSoon=False,
+        assigned=False,
+        sessions=False,
+        exams=False,
+        notes=False,
+        review=False,
+        italeem=False,
     )
     settings_services.update_settings(db, account, patch)
     settings_url = f"{get_settings().public_base_url.rstrip('/')}/settings"

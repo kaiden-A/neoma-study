@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.models import EmailLog, GroupMember, NotificationState
 from app.models import Session as SessionRow
 from app.models.enums import GroupRole
-from app.services import reminder_services
+from app.services import reminder_services, settings_services
 
 settings = get_settings()
 MS_HOUR = 3_600_000
@@ -249,6 +249,7 @@ def test_unsubscribe_turns_reminders_off(
 
     assert response.status_code == 200
     assert "Reminder emails are off" in response.text
+    assert settings_services.read_settings(user).kinds.italeem is False
 
     result = reminder_services.send_reminders(db)
     assert result["sent"] == 0

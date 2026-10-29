@@ -193,6 +193,12 @@ server you did not start.
   copied into R2/vault on demand (`POST /api/moodle/courses/{id}/save`), then the
   normal note/extraction/search/viewer path applies. `mcp_italeem.py` adds the
   `italeem_*` MCP tools. Read-only: never submit, post or message.
+  The maintenance sync (`POST /api/maintenance/sync-moodle?notify=true`) also
+  scans forums, files and grades; `moodle_accounts.seen` JSONB is the
+  idempotency state (first scan is a silent baseline) and
+  `email_services.send_italeem_update` sends one batched `kind="italeem"` email.
+  It is driven by Cloud Scheduler, not GitHub Actions: public-repo schedules are
+  disabled after 60 days of repository inactivity.
 - Notifications are derived, never stored: `services/notification_services.py`
   (keys like `overdue:{task}`, `due:{task}:{lead}`); only read/snooze state persists.
 - Email: one digest per user per day (`reminder_services.send_reminders`,

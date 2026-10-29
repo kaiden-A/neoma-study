@@ -8,11 +8,12 @@ tests never leave the machine.
 """
 
 import base64
+import hashlib
 import logging
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -192,6 +193,91 @@ def _base_url() -> str:
 
 def _settings_url() -> str:
     return f"{_base_url()}/settings"
+
+
+ITALEEM_GROUPS = ("Announcements", "Forum posts", "Grades", "Deadlines", "New files")
+ITALEEM_MAX_PER_GROUP = 25
+
+
+class ItaleemItem(TypedDict):
+    """One thing a scheduled iTa'leem sync found; rendered by italeem.html."""
+
+    key: str
+    group: str
+    title: str
+    body: str
+    url: str
+    tone: str
+
+
+def _absolute(url: str) -> str:
+    if not url or url.startswith(("http://", "https://")):
+        return url
+    return f"{_base_url()}{url if url.startswith('/') else '/' + url}"
+
+
+def send_italeem_update(db: DbSession, *, user: User, items: list[ItaleemItem]) -> EmailLog | None:
+    """One batched notice for everything a scheduled iTa'leem sync found.
+
+    The caller owns the seen state; this only renders and sends. A duplicate
+    batch (same item keys) is a no-op through email_log.
+    """
+    if not items:
+        return None
+    if not settings_services.read_settings(user).kinds.italeem:
+        return None
+    if not (user.email or "").strip():
+        return None
+
+    groups: list[dict[str, Any]] = []
+    for label in ITALEEM_GROUPS:
+        rows = [item for item in items if item["group"] == label]
+        if not rows:
+            continue
+        entries = [
+            {
+                "title": item["title"],
+                "body": item["body"],
+                "url": _absolute(item["url"]),
+                "tone": item["tone"] or "muted",
+            }
+            for item in rows[:ITALEEM_MAX_PER_GROUP]
+        ]
+        if len(rows) > ITALEEM_MAX_PER_GROUP:
+            entries.append(
+                {
+                    "title": f"…and {len(rows) - ITALEEM_MAX_PER_GROUP} more",
+                    "body": "",
+                    "url": "",
+                    "tone": "muted",
+                }
+            )
+        groups.append({"label": label, "entries": entries})
+    if not groups:
+        return None
+
+    total = len(items)
+    subject = f"Neoma · {total} new thing{'s' if total != 1 else ''} on iTa'leem"
+    context = {
+        "subject": subject,
+        "heading": "New on iTa'leem",
+        "count": total,
+        "groups": groups,
+        "courses_url": f"{_base_url()}/courses",
+        "settings_url": _settings_url(),
+    }
+    html, text = render_pair("italeem", context)
+    digest = hashlib.sha1(",".join(sorted(item["key"] for item in items)).encode("utf-8")).hexdigest()[:32]
+    return send_email(
+        db,
+        user=user,
+        kind="italeem",
+        dedupe_key=f"italeem:{user.id}:{digest}",
+        to=user.email,
+        subject=subject,
+        html=html,
+        text=text,
+    )
 
 
 def _fmt_when(value: datetime) -> str:

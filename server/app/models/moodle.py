@@ -52,6 +52,11 @@ class MoodleAccount(Base):
     ignored_uids: Mapped[list] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
+    # Last-seen discussion, file, grade and deadline keys for scheduled update
+    # emails. A repeated run (or an overlapping app sync) must not notify twice.
+    seen: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -64,9 +69,7 @@ class MoodleCourse(Base):
     """A Moodle course, mirrored for one user, with its lazily cached outline."""
 
     __tablename__ = "moodle_courses"
-    __table_args__ = (
-        UniqueConstraint("user_id", "course_id", name="uq_moodle_courses_user_course"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "course_id", name="uq_moodle_courses_user_course"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -104,9 +107,7 @@ class MoodleAssignment(Base):
     """A Moodle assignment and the Neoma task it produced."""
 
     __tablename__ = "moodle_assignments"
-    __table_args__ = (
-        UniqueConstraint("user_id", "assign_id", name="uq_moodle_assignments_user_assign"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "assign_id", name="uq_moodle_assignments_user_assign"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(

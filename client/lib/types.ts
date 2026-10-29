@@ -221,6 +221,7 @@ export interface NotificationKinds {
   exams: boolean;
   notes: boolean;
   review: boolean;
+  italeem: boolean;
 }
 
 export interface GoogleSettings {

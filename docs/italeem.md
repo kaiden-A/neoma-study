@@ -39,6 +39,8 @@ Moodle 5.2-era core (`2026042000.02`).
 | `core_course_get_contents` | cached outline, fetched lazily per course |
 | `gradereport_user_get_grade_items` | cached grades tab |
 | `mod_assign_get_submission_status` | submitted/draft/not-submitted state (10 min TTL) |
+| `mod_forum_get_forums_by_courses` | forum names/types for scheduled announcement emails |
+| `mod_forum_get_forum_discussions` | new announcements and reply counts |
 | `pluginfile.php` + `?token=` | "Save to vault": R2 copy + note + text extraction |
 
 Assignment due dates win over the calendar's `assign` events (those are
@@ -86,6 +88,60 @@ break the page; an invalid token still asks for a reconnect.
 `GET /api/moodle/courses/{id}/grades` refreshes the grade items (6-hour TTL).
 Neoma never auto-completes a task from a Moodle submission; the status is a
 separate chip.
+
+## Scheduled update emails
+
+`POST /api/maintenance/sync-moodle?notify=true` (with `X-Cleanup-Secret`) does
+the normal deadline sync and then scans for things the user has not been told
+about yet:
+
+- new announcements and forum posts (the full first post is included);
+- new replies, detected through `numreplies` (IIUM's
+  `mod_forum_get_discussion_posts` call currently returns an access error on the
+  news forums, so reply text is best-effort and the email always links to the
+  discussion);
+- new files in a course outline;
+- new or changed item-level grades (`itemtype=mod`/`manual`; course totals and
+  hidden grades are skipped);
+- imported deadlines, even if the app opened and synced them first.
+
+The state lives in `moodle_accounts.seen` (JSONB) and is keyed by discussion ID,
+file UID, grade item fingerprint and task UID. **The first scheduled scan after
+connecting is a silent baseline** — per course and per forum — so it never
+emails an existing backlog. A new enrolment is baselined the same way. One
+batched email is sent per account per scan; the batch key also makes a repeated
+run idempotent. `NotificationKinds.italeem` controls it, and the unsubscribe
+endpoint turns it off with the other reminder kinds. Run
+`alembic upgrade head` before deploying the code; the hand-written migration
+adds the column.
+
+Run it every two hours from Cloud Scheduler. Use the **direct Cloud Run URL**
+(Firebase Hosting rewrites are not meant for a multi-course scan) and the
+timezone `Asia/Kuala_Lumpur`:
+
+```bash
+gcloud scheduler jobs create http neoma-sync-italeem \
+  --location=asia-southeast1 \
+  --schedule="0 */2 * * *" \
+  --time-zone="Asia/Kuala_Lumpur" \
+  --uri="https://<cloud-run-url>/api/maintenance/sync-moodle?notify=true" \
+  --http-method=POST \
+  --headers="X-Cleanup-Secret=<secret>" \
+  --attempt-deadline=300s \
+  --max-retry-attempts=3 \
+  --min-backoff=30s \
+  --max-backoff=300s
+```
+
+GitHub Actions is deliberately not used for this: on a public repository,
+scheduled workflows are auto-disabled after 60 days without repository
+activity, which would silently stop the emails. A plain `workflow_dispatch`
+workflow is fine as a manual button; the scheduler must not depend on it.
+
+The scan makes one forums call, one discussion call per forum with posts, one
+outline call per active course and one grade call per course every six hours.
+It is sequential, so keep the endpoint on the direct Cloud Run URL and watch
+the run count as users are added.
 
 ## MCP tools
 

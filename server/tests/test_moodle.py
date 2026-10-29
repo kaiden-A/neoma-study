@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from app.models import (
+    EmailLog,
     FileObject,
     MoodleAccount,
     MoodleAssignment,
@@ -20,7 +21,7 @@ from app.models import (
     Task,
 )
 from app.models.enums import NoteScope
-from app.services import moodle_services
+from app.services import moodle_services, settings_services
 from app.services.errors import InvalidError
 
 TOKEN = "a" * 32
@@ -30,6 +31,9 @@ NEEDED = [
     "core_course_get_contents",
     "core_calendar_get_action_events_by_timesort",
     "gradereport_user_get_grade_items",
+    "mod_forum_get_forums_by_courses",
+    "mod_forum_get_forum_discussions",
+    "mod_forum_get_discussion_posts",
 ]
 
 
@@ -47,6 +51,73 @@ class FakeMoodle:
         self.bad_token = bad_token
         self.calls: list[str] = []
         self.downloads: list[str] = []
+        self.grade = "78.00"
+        self.grade_hidden = False
+        self.outline: list[dict] = [
+            {
+                "id": 1,
+                "name": "Week 1",
+                "uservisible": True,
+                "summary": "<p>Intro</p>",
+                "modules": [
+                    {
+                        "id": 9001,
+                        "name": "Case brief instructions",
+                        "modname": "assign",
+                        "url": "https://italeemc.iium.edu.my/mod/assign/view.php?id=9001",
+                        "uservisible": True,
+                        "visible": 1,
+                        "description": "<p>Brief the case.</p>",
+                        "contents": [],
+                    },
+                    {
+                        "id": 9003,
+                        "name": "Week 1 slides",
+                        "modname": "resource",
+                        "url": "https://italeemc.iium.edu.my/mod/resource/view.php?id=9003",
+                        "uservisible": True,
+                        "visible": 1,
+                        "description": "",
+                        "contents": [
+                            {
+                                "type": "file",
+                                "filename": "week1.txt",
+                                "filepath": "/",
+                                "filesize": 20,
+                                "fileurl": "https://italeemc.iium.edu.my/webservice/pluginfile.php/1/mod_resource/content/0/week1.txt",
+                                "mimetype": "text/plain",
+                            }
+                        ],
+                    },
+                ],
+            }
+        ]
+        self.forums: list[dict] = [
+            {
+                "id": 11,
+                "course": 101,
+                "type": "news",
+                "name": "Announcements",
+                "numdiscussions": 1,
+                "cmid": 9004,
+            }
+        ]
+        self.discussions: dict[int, list[dict]] = {
+            11: [
+                {
+                    "id": 31,
+                    "name": "Hybrid week",
+                    "message": "<p>Classes are online this week.</p>",
+                    "userid": 9,
+                    "userfullname": "Dr Lee",
+                    "usermodified": 9,
+                    "numreplies": 0,
+                    "created": _now(-1),
+                    "modified": _now(-1),
+                    "timemodified": _now(-1),
+                }
+            ]
+        }
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
@@ -145,48 +216,20 @@ class FakeMoodle:
                 },
             )
         if function == "core_course_get_contents":
+            return httpx.Response(200, json=self.outline)
+        if function == "mod_forum_get_forums_by_courses":
+            return httpx.Response(200, json=self.forums)
+        if function == "mod_forum_get_forum_discussions":
+            forum_id = int(form.get("forumid", ["0"])[0])
             return httpx.Response(
                 200,
-                json=[
-                    {
-                        "id": 1,
-                        "name": "Week 1",
-                        "uservisible": True,
-                        "summary": "<p>Intro</p>",
-                        "modules": [
-                            {
-                                "id": 9001,
-                                "name": "Case brief instructions",
-                                "modname": "assign",
-                                "url": "https://italeemc.iium.edu.my/mod/assign/view.php?id=9001",
-                                "uservisible": True,
-                                "visible": 1,
-                                "description": "<p>Brief the case.</p>",
-                                "contents": [],
-                            },
-                            {
-                                "id": 9003,
-                                "name": "Week 1 slides",
-                                "modname": "resource",
-                                "url": "https://italeemc.iium.edu.my/mod/resource/view.php?id=9003",
-                                "uservisible": True,
-                                "visible": 1,
-                                "description": "",
-                                "contents": [
-                                    {
-                                        "type": "file",
-                                        "filename": "week1.txt",
-                                        "filepath": "/",
-                                        "filesize": 20,
-                                        "fileurl": "https://italeemc.iium.edu.my/webservice/pluginfile.php/1/mod_resource/content/0/week1.txt",
-                                        "mimetype": "text/plain",
-                                    }
-                                ],
-                            },
-                        ],
-                    }
-                ],
+                json={
+                    "discussions": self.discussions.get(forum_id, []),
+                    "warnings": [],
+                },
             )
+        if function == "mod_forum_get_discussion_posts":
+            return httpx.Response(200, json={"posts": [], "warnings": []})
         if function == "gradereport_user_get_grade_items":
             return httpx.Response(
                 200,
@@ -196,13 +239,31 @@ class FakeMoodle:
                             "courseid": 101,
                             "gradeitems": [
                                 {
+                                    "id": 55,
                                     "itemname": "Midterm",
-                                    "gradeformatted": "78.00",
+                                    "itemtype": "mod",
+                                    "itemmodule": "assign",
+                                    "iteminstance": 500,
+                                    "gradeformatted": self.grade,
                                     "grademax": 100,
                                     "percentageformatted": "78 %",
                                     "feedback": "<p>Good</p>",
                                     "cmid": 9001,
-                                }
+                                    "gradeishidden": self.grade_hidden,
+                                    "gradehiddenbydate": False,
+                                },
+                                {
+                                    "id": 56,
+                                    "itemname": "Course total",
+                                    "itemtype": "course",
+                                    "gradeformatted": self.grade,
+                                    "grademax": 100,
+                                    "percentageformatted": "78 %",
+                                    "feedback": "",
+                                    "cmid": None,
+                                    "gradeishidden": False,
+                                    "gradehiddenbydate": False,
+                                },
                             ],
                         }
                     ]
@@ -277,9 +338,7 @@ def test_connect_sync_detach_delete(
 
     # Editing a mirrored task detaches it and never recreates it.
     assignment_task = next(task for task in tasks if task.external_uid == "assign:500")
-    edited = client.patch(
-        f"/api/tasks/{assignment_task.id}", json={"title": "My own case brief"}
-    )
+    edited = client.patch(f"/api/tasks/{assignment_task.id}", json={"title": "My own case brief"})
     assert edited.status_code == 200, edited.text
     db.expire_all()
     detached = db.get(Task, assignment_task.id)
@@ -287,6 +346,7 @@ def test_connect_sync_detach_delete(
     assert detached.external_uid is None
     assert detached.title == "My own case brief"
     account = db.scalar(select(MoodleAccount).where(MoodleAccount.user_id == user.id))
+    assert account is not None
     assert "assign:500" in account.ignored_uids
 
     client.post("/api/moodle/sync")
@@ -332,9 +392,7 @@ def test_course_detail_and_save_to_vault(
     assert body["sections"][0]["modules"][1]["files"][0]["filename"] == "week1.txt"
     assert body["assignments"][0]["name"] == "Case brief"
 
-    saved = client.post(
-        f"/api/moodle/courses/{course_id}/save", json={"cmid": 9003, "fileIndex": 0}
-    )
+    saved = client.post(f"/api/moodle/courses/{course_id}/save", json={"cmid": 9003, "fileIndex": 0})
     assert saved.status_code == 201, saved.text
     note_id = saved.json()["noteId"]
 
@@ -405,9 +463,155 @@ def test_disconnect_keeps_vault_notes(
     assert status["connected"] is False
 
 
-def test_bad_token_is_a_sentence(
-    client: TestClient, db: DbSession, make_user, sign_in, monkeypatch
+def _age_grades(db: DbSession, user) -> None:
+    course = db.scalar(select(MoodleCourse).where(MoodleCourse.user_id == user.id))
+    assert course is not None
+    course.grades_at = datetime.now(UTC) - moodle_services.GRADES_TTL - timedelta(minutes=1)
+    db.commit()
+
+
+def test_scheduled_sync_emails_new_items_once(
+    client: TestClient,
+    db: DbSession,
+    make_user,
+    sign_in,
+    monkeypatch,
+    sent_emails: list[dict],
 ) -> None:
+    user = make_user(db, email="ada@example.com")
+    sign_in(user)
+    fake = FakeMoodle()
+    install(monkeypatch, fake)
+    assert client.post("/api/moodle/token", json={"link": _link()}).status_code == 200
+
+    # The first scheduled scan only records the baseline.
+    baseline = moodle_services.sync_all(db, notify=True)
+    assert baseline["updates"] == 0
+    assert baseline["emails"] == 0
+    assert sent_emails == []
+
+    fake.discussions[11].append(
+        {
+            "id": 32,
+            "name": "Exam update",
+            "message": "<p>Bring a calculator.</p>",
+            "userid": 9,
+            "userfullname": "Dr Lee",
+            "usermodified": 9,
+            "numreplies": 0,
+            "created": _now(0),
+            "modified": _now(0),
+            "timemodified": _now(0),
+        }
+    )
+    fake.forums[0]["numdiscussions"] = 2
+    fake.outline[0]["modules"][1]["contents"].append(
+        {
+            "type": "file",
+            "filename": "week2.txt",
+            "filepath": "/",
+            "filesize": 22,
+            "fileurl": "https://italeemc.iium.edu.my/webservice/pluginfile.php/1/mod_resource/content/0/week2.txt",
+            "mimetype": "text/plain",
+        }
+    )
+    fake.grade = "85.00"
+    _age_grades(db, user)
+
+    result = moodle_services.sync_all(db, notify=True)
+    assert result["updates"] == 3
+    assert result["emails"] == 1
+    assert len(sent_emails) == 1
+    call = sent_emails[0]
+    assert call["to"] == "ada@example.com"
+    assert "iTa'leem" in call["subject"]
+    assert "Exam update" in call["html"]
+    assert "week2.txt" in call["html"]
+    assert "85.00" in call["html"]
+    assert "Hybrid week" not in call["html"]
+    assert db.query(EmailLog).filter(EmailLog.kind == "italeem").count() == 1
+
+    # A repeated run does not re-email anything.
+    again = moodle_services.sync_all(db, notify=True)
+    assert again["updates"] == 0
+    assert again["emails"] == 0
+    assert len(sent_emails) == 1
+
+
+def test_scheduled_replies_and_italeem_toggle(
+    client: TestClient,
+    db: DbSession,
+    make_user,
+    sign_in,
+    monkeypatch,
+    sent_emails: list[dict],
+) -> None:
+    user = make_user(db, email="ada@example.com")
+    sign_in(user)
+    fake = FakeMoodle()
+    install(monkeypatch, fake)
+    assert client.post("/api/moodle/token", json={"link": _link()}).status_code == 200
+    moodle_services.sync_all(db, notify=True)
+
+    fake.discussions[11][0]["numreplies"] = 1
+    fake.discussions[11][0]["timemodified"] = _now(0)
+    reply = moodle_services.sync_all(db, notify=True)
+    assert reply["updates"] == 1
+    assert reply["emails"] == 1
+    assert "New reply" in sent_emails[0]["html"]
+    assert "Hybrid week" in sent_emails[0]["html"]
+
+    current = settings_services.read_settings(user)
+    current.kinds = current.kinds.model_copy(update={"italeem": False})
+    settings_services.write_settings(db, user, current)
+
+    fake.discussions[11].append(
+        {
+            "id": 33,
+            "name": "Muted update",
+            "message": "<p>You turned iTa'leem updates off.</p>",
+            "userid": 9,
+            "userfullname": "Dr Lee",
+            "usermodified": 9,
+            "numreplies": 0,
+            "created": _now(0),
+            "modified": _now(0),
+            "timemodified": _now(0),
+        }
+    )
+    fake.forums[0]["numdiscussions"] = 2
+    muted = moodle_services.sync_all(db, notify=True)
+    assert muted["updates"] == 1
+    assert muted["emails"] == 0
+    assert len(sent_emails) == 1
+
+    current = settings_services.read_settings(user)
+    current.kinds = current.kinds.model_copy(update={"italeem": True})
+    settings_services.write_settings(db, user, current)
+
+    fake.discussions[11].append(
+        {
+            "id": 34,
+            "name": "After re-enable",
+            "message": "<p>This one should arrive.</p>",
+            "userid": 9,
+            "userfullname": "Dr Lee",
+            "usermodified": 9,
+            "numreplies": 0,
+            "created": _now(0),
+            "modified": _now(0),
+            "timemodified": _now(0),
+        }
+    )
+    fake.forums[0]["numdiscussions"] = 3
+    resumed = moodle_services.sync_all(db, notify=True)
+    assert resumed["updates"] == 1
+    assert resumed["emails"] == 1
+    assert "After re-enable" in sent_emails[1]["html"]
+    assert "Muted update" not in sent_emails[1]["html"]
+
+
+def test_bad_token_is_a_sentence(client: TestClient, db: DbSession, make_user, sign_in, monkeypatch) -> None:
     user = make_user(db)
     sign_in(user)
     install(monkeypatch, FakeMoodle(bad_token=True))

@@ -1,0 +1,48 @@
+{% extends "emails/base.html" %}
+
+{% block heading %}{{ heading }}{% endblock %}
+
+{% block body %}
+  <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#5A655F;">
+    {{ count }} new thing{% if count != 1 %}s{% endif %} since your last iTa'leem sync.
+  </p>
+
+  {% for group in groups %}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;">
+      <tr>
+        <td style="padding:0 0 8px;border-bottom:1px solid #D9DFD7;">
+          <span style="font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#5A655F;">
+            {{ group.label }} · {{ group.entries|length }}
+          </span>
+        </td>
+      </tr>
+      {% for item in group.entries %}
+        <tr>
+          <td style="padding:10px 0 0;">
+            {% if item.url %}
+              <a href="{{ item.url }}" style="font-size:15px;font-weight:600;line-height:1.4;color:#171C1A;text-decoration:none;">{{ item.title }}</a>
+            {% else %}
+              <div style="font-size:15px;font-weight:600;line-height:1.4;">{{ item.title }}</div>
+            {% endif %}
+            {% if item.body %}
+              <div style="font-size:13px;line-height:1.5;color:{{ '#C8452F' if item.tone == 'danger' else '#5A655F' }};">{{ item.body }}</div>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endfor %}
+{% endblock %}
+
+{% block cta %}
+  <a href="{{ courses_url }}" style="display:inline-block;background:#171C1A;color:#EFF1EC;text-decoration:none;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;">
+    Open courses
+  </a>
+  <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#5A655F;">
+    Change what lands here any time in <a href="{{ settings_url }}" style="color:#5A655F;">Settings → Notifications</a>.
+  </p>
+{% endblock %}
+
+{% block footer %}
+  You get this because iTa'leem updates are on for your Neoma account.
+{% endblock %}

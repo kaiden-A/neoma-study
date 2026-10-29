@@ -20,6 +20,7 @@ def test_settings_defaults(client: TestClient, sign_in, make_user, db) -> None:
     assert body["theme"] == "light"
     assert body["leadTimeHours"] == 48
     assert body["kinds"]["overdue"] is True
+    assert body["kinds"]["italeem"] is True
     assert body["google"]["status"] == "disconnected"
     assert body["elpis"]["enabled"] is False
     assert body["syncLog"] == []

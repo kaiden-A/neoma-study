@@ -18,11 +18,13 @@ from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import unquote, urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
+from ..config import get_settings
 from ..models import (
     FileObject,
     MoodleAccount,
@@ -48,7 +50,15 @@ from ..schemas.moodle import (
 )
 from ..schemas.notes import NoteOut
 from ..utils import to_ms
-from . import crypto, extract_services, file_services, google_services, note_services, settings_services
+from . import (
+    crypto,
+    email_services,
+    extract_services,
+    file_services,
+    google_services,
+    note_services,
+    settings_services,
+)
 from .errors import InvalidError, NotFoundError, UnavailableError
 
 log = logging.getLogger(__name__)
@@ -65,6 +75,9 @@ SUBMISSION_TTL = timedelta(minutes=10)
 MAX_FILE_BYTES = 50 * 1024 * 1024
 DEADLINE_REMINDER_MINUTES = 24 * 60
 COURSE_COLORS = ("amber", "mint", "sky", "coral", "violet", "pink")
+UPDATES_LOOKBACK_DAYS = 180
+FORUM_DISCUSSION_LIMIT = 30
+SEEN_LIMIT = 2000
 
 MISSING_COURSE = "We could not find that iTa'leem course."
 NOT_CONNECTED = "Connect iTa'leem first: Settings → iTa'leem."
@@ -84,9 +97,7 @@ class MoodleAuthError(MoodleError):
 class MoodleClient:
     token: str
     wwwroot: str = MOODLE_WWWROOT
-    http: httpx.Client = field(
-        default_factory=lambda: httpx.Client(timeout=8, follow_redirects=True)
-    )
+    http: httpx.Client = field(default_factory=lambda: httpx.Client(timeout=8, follow_redirects=True))
 
     def call(self, function: str, **params: Any) -> Any:
         data: dict[str, str] = {
@@ -101,9 +112,7 @@ class MoodleClient:
         # lands on a healthy node, so a read does not have to fail the user.
         for attempt in range(3):
             try:
-                response = self.http.post(
-                    f"{self.wwwroot}/webservice/rest/server.php", data=data
-                )
+                response = self.http.post(f"{self.wwwroot}/webservice/rest/server.php", data=data)
             except httpx.HTTPError as exc:
                 if attempt == 2:
                     raise MoodleError(UNREACHABLE) from exc
@@ -128,9 +137,7 @@ class MoodleClient:
                     "iTa'leem's server has a storage problem (dataroot). "
                     "This is on IIUM's side; try again in a moment."
                 )
-            raise MoodleError(
-                f"iTa'leem returned a server error ({response.status_code}). Try again."
-            )
+            raise MoodleError(f"iTa'leem returned a server error ({response.status_code}). Try again.")
         if response.status_code >= 400:
             log.warning(
                 "iTa'leem %s returned %s: %s",
@@ -190,19 +197,34 @@ class MoodleClient:
         return [dict(row) for row in payload or []]
 
     def grades(self, course_id: int, moodle_user_id: int) -> list[dict]:
-        payload = self.call(
-            "gradereport_user_get_grade_items", courseid=course_id, userid=moodle_user_id
-        )
+        payload = self.call("gradereport_user_get_grade_items", courseid=course_id, userid=moodle_user_id)
         rows: list[dict] = []
         for user_grade in (payload or {}).get("usergrades", []):
             for item in user_grade.get("gradeitems", []) or []:
                 rows.append(dict(item))
         return rows
 
+    def forums(self, course_ids: list[int]) -> list[dict]:
+        if not course_ids:
+            return []
+        payload = self.call("mod_forum_get_forums_by_courses", courseids=course_ids)
+        return [dict(row) for row in payload or []]
+
+    def forum_discussions(self, forum_id: int, *, perpage: int = FORUM_DISCUSSION_LIMIT) -> list[dict]:
+        payload = self.call("mod_forum_get_forum_discussions", forumid=forum_id, page=0, perpage=perpage)
+        rows = [dict(row) for row in (payload or {}).get("discussions", [])]
+        warnings = (payload or {}).get("warnings") or []
+        if warnings and not rows:
+            message = str((warnings[0] or {}).get("message") or "iTa'leem refused that forum.")
+            raise MoodleError(message)
+        return rows
+
+    def discussion_posts(self, discussion_id: int) -> list[dict]:
+        payload = self.call("mod_forum_get_discussion_posts", discussionid=discussion_id)
+        return [dict(row) for row in (payload or {}).get("posts", [])]
+
     def submission_status(self, assign_id: int, moodle_user_id: int) -> dict:
-        payload = self.call(
-            "mod_assign_get_submission_status", assignid=assign_id, userid=moodle_user_id
-        )
+        payload = self.call("mod_assign_get_submission_status", assignid=assign_id, userid=moodle_user_id)
         return dict(payload or {})
 
     def download(self, fileurl: str) -> tuple[bytes, str]:
@@ -435,9 +457,7 @@ def connect_token(db: DbSession, user: User, raw: str) -> dict:
     account.moodle_user_id = moodle_user_id
     account.username = str(info.get("username") or "")[:100]
     account.release = str(info.get("release") or "")[:80]
-    account.functions = [
-        str(row.get("name")) for row in info.get("functions") or [] if isinstance(row, dict)
-    ]
+    account.functions = [str(row.get("name")) for row in info.get("functions") or [] if isinstance(row, dict)]
     account.last_error = ""
     db.commit()
     db.refresh(account)
@@ -450,9 +470,7 @@ def _apply_info(account: MoodleAccount, info: dict) -> None:
     account.moodle_user_id = int(info.get("userid") or account.moodle_user_id or 0) or None
     account.username = str(info.get("username") or account.username or "")[:100]
     account.release = str(info.get("release") or account.release or "")[:80]
-    account.functions = [
-        str(row.get("name")) for row in info.get("functions") or [] if isinstance(row, dict)
-    ]
+    account.functions = [str(row.get("name")) for row in info.get("functions") or [] if isinstance(row, dict)]
 
 
 def _folder_position(db: DbSession, user: User) -> int:
@@ -577,9 +595,7 @@ def _sync_assignments(
             seen.add(assign_id)
             row = existing.get(assign_id)
             if row is None:
-                row = MoodleAssignment(
-                    user_id=user.id, course_id=course.id, assign_id=assign_id, name=""
-                )
+                row = MoodleAssignment(user_id=user.id, course_id=course.id, assign_id=assign_id, name="")
                 db.add(row)
             row.course_id = course.id
             row.cmid = int(raw.get("cmid") or 0)
@@ -685,9 +701,7 @@ def _sync_events(
     return count
 
 
-def sync_account(
-    db: DbSession, user: User, account: MoodleAccount | None = None
-) -> dict[str, int]:
+def sync_account(db: DbSession, user: User, account: MoodleAccount | None = None) -> dict[str, int]:
     account = account or require_account(db, user)
     api = _api(db, account)
     try:
@@ -706,9 +720,7 @@ def sync_account(
         account.last_error = ""
         db.commit()
         db.refresh(account)
-        _write_settings(
-            db, user, status="connected", last_sync_at=to_ms(account.last_sync_at), error=None
-        )
+        _write_settings(db, user, status="connected", last_sync_at=to_ms(account.last_sync_at), error=None)
         return {"courses": len(by_moodle_id), "deadlines": deadlines, "events": event_count}
     except MoodleAuthError:
         db.rollback()
@@ -784,9 +796,538 @@ def ignore_task(db: DbSession, user: User, task: Task) -> None:
         account.ignored_uids = uids[-500:]
 
 
-def sync_all(db: DbSession, *, dry_run: bool = False) -> dict[str, int]:
-    """Scheduler entry point: refresh every connected iTa'leem account."""
-    counts = {"accounts": 0, "courses": 0, "deadlines": 0, "events": 0, "failed": 0}
+@dataclass
+class _SeenState:
+    """What the scheduled sync has already told the user about.
+
+    Stored in `moodle_accounts.seen` (JSONB). Readiness is per course/forum so
+    a new enrolment or a new forum becomes a baseline instead of a backlog.
+    """
+
+    deadlines: set[str] = field(default_factory=set)
+    deadline_ready: set[str] = field(default_factory=set)
+    forums: dict[str, dict] = field(default_factory=dict)
+    forum_ready: set[int] = field(default_factory=set)
+    files: set[str] = field(default_factory=set)
+    file_ready: set[int] = field(default_factory=set)
+    grades: dict[str, str] = field(default_factory=dict)
+    grade_ready: set[int] = field(default_factory=set)
+
+    @classmethod
+    def load(cls, raw: dict | None) -> "_SeenState":
+        data = raw if isinstance(raw, dict) else {}
+        forums: dict[str, dict] = {}
+        raw_forums = data.get("forums")
+        if isinstance(raw_forums, dict):
+            for key, value in raw_forums.items():
+                if isinstance(value, dict):
+                    forums[str(key)] = {
+                        "replies": int(value.get("replies") or 0),
+                        "modified": int(value.get("modified") or 0),
+                    }
+                else:
+                    forums[str(key)] = {"replies": int(value or 0), "modified": 0}
+        raw_grades = data.get("grades")
+        grades: dict[str, str] = {}
+        if isinstance(raw_grades, dict):
+            grades = {str(key): str(value) for key, value in raw_grades.items()}
+        return cls(
+            deadlines={str(value) for value in data.get("deadlines") or []},
+            deadline_ready={str(value) for value in data.get("deadlineReady") or []},
+            forums=forums,
+            forum_ready=_int_values(data.get("forumReady")),
+            files={str(value) for value in data.get("files") or []},
+            file_ready=_int_values(data.get("fileReady")),
+            grades=grades,
+            grade_ready=_int_values(data.get("gradeReady")),
+        )
+
+    def dump(self) -> dict:
+        forums = self.forums
+        if len(forums) > 1000:
+            forums = dict(
+                sorted(
+                    forums.items(),
+                    key=lambda item: int(item[1].get("modified") or 0),
+                    reverse=True,
+                )[:1000]
+            )
+        return {
+            "deadlines": sorted(self.deadlines)[-SEEN_LIMIT:],
+            "deadlineReady": sorted(self.deadline_ready),
+            "forums": forums,
+            "forumReady": sorted(self.forum_ready),
+            "files": sorted(self.files)[-SEEN_LIMIT:],
+            "fileReady": sorted(self.file_ready),
+            "grades": self.grades,
+            "gradeReady": sorted(self.grade_ready),
+        }
+
+
+def _int_values(values: Any) -> set[int]:
+    result: set[int] = set()
+    for value in values or []:
+        try:
+            result.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _when_label(value: datetime) -> str:
+    try:
+        zone = ZoneInfo(get_settings().default_timezone)
+    except Exception:  # noqa: BLE001 - a bad setting must not break the sync
+        zone = UTC
+    local = value.astimezone(zone)
+    return f"{local:%a} {local.day} {local:%b} · {local:%H:%M}"
+
+
+def _excerpt(value: Any, limit: int = 400) -> str:
+    return re.sub(r"\s+", " ", html_to_text(str(value or ""), limit)).strip()
+
+
+def _deadline_item(task: Task, course: MoodleCourse | None) -> email_services.ItaleemItem:
+    course_label = (course.shortname or course.fullname) if course is not None else "iTa'leem"
+    body = f"{course_label} · Due {_when_label(task.due_at)}" if task.due_at is not None else course_label
+    overdue = task.due_at is not None and task.due_at < utcnow()
+    return {
+        "key": f"task:{task.external_uid}",
+        "group": "Deadlines",
+        "title": (task.title or "iTa'leem deadline")[:300],
+        "body": body,
+        "url": f"/courses/{course.id}" if course is not None else "/today",
+        "tone": "danger" if overdue else "muted",
+    }
+
+
+def _collect_deadlines(
+    db: DbSession,
+    user: User,
+    courses: list[MoodleCourse],
+    state: _SeenState,
+    items: list[email_services.ItaleemItem],
+    now: datetime,
+) -> None:
+    rows = db.execute(
+        select(Task, MoodleCourse)
+        .join(MoodleCourse, Task.course_id == MoodleCourse.id, isouter=True)
+        .where(
+            Task.owner_id == user.id,
+            Task.external_uid.is_not(None),
+            Task.created_at >= now - timedelta(days=UPDATES_LOOKBACK_DAYS),
+        )
+        .order_by(Task.created_at.asc())
+    ).all()
+    by_course: dict[str, list[tuple[Task, MoodleCourse | None]]] = {}
+    for task, course in rows:
+        key = str(course.course_id) if course is not None else "none"
+        by_course.setdefault(key, []).append((task, course))
+
+    # First sight of a course is a baseline: do not email its whole backlog.
+    for key, pairs in by_course.items():
+        if key in state.deadline_ready:
+            continue
+        for task, _ in pairs:
+            state.deadlines.add(str(task.external_uid))
+        state.deadline_ready.add(key)
+    for course in courses:
+        state.deadline_ready.add(str(course.course_id))
+
+    for pairs in by_course.values():
+        for task, course in pairs:
+            uid = str(task.external_uid)
+            if uid in state.deadlines:
+                continue
+            state.deadlines.add(uid)
+            items.append(_deadline_item(task, course))
+
+
+def _forum_item(
+    forum: dict,
+    course: MoodleCourse,
+    discussion: dict,
+    account: MoodleAccount,
+) -> email_services.ItaleemItem:
+    discussion_id = int(discussion.get("id") or 0)
+    is_news = str(forum.get("type") or "") == "news"
+    parts = [
+        course.shortname or course.fullname,
+        str(forum.get("name") or ""),
+        str(discussion.get("userfullname") or ""),
+    ]
+    body = " · ".join(part for part in parts if part)
+    excerpt = _excerpt(discussion.get("message"))
+    if excerpt:
+        body = f"{body} — {excerpt}" if body else excerpt
+    return {
+        "key": f"forum:{discussion_id}",
+        "group": "Announcements" if is_news else "Forum posts",
+        "title": str(discussion.get("name") or discussion.get("subject") or "iTa'leem post")[:300],
+        "body": body,
+        "url": (f"{account.wwwroot or MOODLE_WWWROOT}/mod/forum/discuss.php?d={discussion_id}"),
+        "tone": "muted",
+    }
+
+
+def _latest_reply(
+    api: MoodleClient,
+    discussion_id: int,
+    me: int,
+    functions: set[str],
+) -> str:
+    if "mod_forum_get_discussion_posts" not in functions:
+        return ""
+    try:
+        posts = api.discussion_posts(discussion_id)
+    except (MoodleError, httpx.HTTPError):
+        # IIUM's news forums currently reject this call; reply text is optional.
+        return ""
+    incoming = [post for post in posts if not me or int(post.get("userid") or 0) != me]
+    replies = [post for post in incoming if int(post.get("parentid") or 0) != 0]
+    pool = replies or incoming
+    if not pool:
+        return ""
+    latest = max(pool, key=lambda post: int(post.get("created") or 0))
+    text = _excerpt(latest.get("message"), 300)
+    author = str(latest.get("userfullname") or "").strip()
+    if author and text:
+        return f"{author}: {text}"
+    return text
+
+
+def _forum_reply_item(
+    api: MoodleClient,
+    forum: dict,
+    course: MoodleCourse,
+    discussion: dict,
+    account: MoodleAccount,
+    functions: set[str],
+) -> email_services.ItaleemItem:
+    discussion_id = int(discussion.get("id") or 0)
+    replies = int(discussion.get("numreplies") or 0)
+    is_news = str(forum.get("type") or "") == "news"
+    subject = str(discussion.get("name") or discussion.get("subject") or "forum post")[:280]
+    body = " · ".join(
+        part for part in (course.shortname or course.fullname, str(forum.get("name") or "")) if part
+    )
+    reply = _latest_reply(api, discussion_id, account.moodle_user_id or 0, functions)
+    if reply:
+        body = f"{body} — {reply}" if body else reply
+    if replies:
+        body = f"{body} · {replies} repl{'y' if replies == 1 else 'ies'}"
+    return {
+        "key": f"forum-reply:{discussion_id}:{replies}",
+        "group": "Announcements" if is_news else "Forum posts",
+        "title": f"New reply in {subject}",
+        "body": body,
+        "url": (f"{account.wwwroot or MOODLE_WWWROOT}/mod/forum/discuss.php?d={discussion_id}"),
+        "tone": "muted",
+    }
+
+
+def _forum_state(discussion: dict) -> dict:
+    return {
+        "replies": int(discussion.get("numreplies") or 0),
+        "modified": int(discussion.get("timemodified") or discussion.get("modified") or 0),
+    }
+
+
+def _collect_forums(
+    api: MoodleClient,
+    account: MoodleAccount,
+    courses: list[MoodleCourse],
+    forums: list[dict],
+    state: _SeenState,
+    items: list[email_services.ItaleemItem],
+    functions: set[str],
+) -> None:
+    me = int(account.moodle_user_id or 0)
+    by_moodle = {course.course_id: course for course in courses}
+    for forum in forums:
+        course = by_moodle.get(int(forum.get("course") or 0))
+        forum_id = int(forum.get("id") or 0)
+        if course is None or not forum_id:
+            continue
+        count = int(forum.get("numdiscussions") or 0)
+        if forum_id not in state.forum_ready and count == 0:
+            # A quiet forum still needs a baseline marker so its first post is new.
+            state.forum_ready.add(forum_id)
+            continue
+        if forum_id in state.forum_ready and count == 0:
+            continue
+        try:
+            discussions = api.forum_discussions(forum_id)
+        except (MoodleError, httpx.HTTPError) as exc:
+            log.warning(
+                "iTa'leem forum %s failed for user %s: %s",
+                forum_id,
+                account.user_id,
+                exc,
+            )
+            continue
+
+        if forum_id not in state.forum_ready:
+            for discussion in discussions:
+                discussion_id = str(discussion.get("id") or "")
+                if discussion_id:
+                    state.forums[discussion_id] = _forum_state(discussion)
+            state.forum_ready.add(forum_id)
+            continue
+
+        for discussion in discussions:
+            discussion_id = str(discussion.get("id") or "")
+            if not discussion_id:
+                continue
+            old = state.forums.get(discussion_id)
+            replies = int(discussion.get("numreplies") or 0)
+            modified = int(discussion.get("timemodified") or discussion.get("modified") or 0)
+            if old is None:
+                author = int(discussion.get("userid") or 0)
+                if not me or author != me:
+                    items.append(_forum_item(forum, course, discussion, account))
+                state.forums[discussion_id] = _forum_state(discussion)
+                continue
+            if replies > int(old.get("replies") or 0):
+                editor = int(discussion.get("usermodified") or 0)
+                if not me or editor != me:
+                    items.append(_forum_reply_item(api, forum, course, discussion, account, functions))
+                state.forums[discussion_id] = _forum_state(discussion)
+            elif modified != int(old.get("modified") or 0):
+                # An edit to an existing post: remember it, do not email.
+                state.forums[discussion_id] = _forum_state(discussion)
+
+
+def _outline_files(account: MoodleAccount, outline: list[dict]) -> dict[str, tuple[str, str]]:
+    files: dict[str, tuple[str, str]] = {}
+    for section in outline or []:
+        if section.get("uservisible") is False:
+            continue
+        for module in section.get("modules") or []:
+            if module.get("uservisible") is False or module.get("visible") in (0, "0", False):
+                continue
+            module_name = str(module.get("name") or "")[:300]
+            for content in module.get("contents") or []:
+                if content.get("type") != "file" or not content.get("fileurl"):
+                    continue
+                uid = _file_uid(account.moodle_user_id, str(content["fileurl"]))
+                filename = str(content.get("filename") or module_name or "iTa'leem file")[:300]
+                files[uid] = (filename, module_name)
+    return files
+
+
+def _collect_files(
+    api: MoodleClient,
+    account: MoodleAccount,
+    courses: list[MoodleCourse],
+    state: _SeenState,
+    items: list[email_services.ItaleemItem],
+    now: datetime,
+) -> None:
+    for course in courses:
+        try:
+            outline = api.course_contents(course.course_id)
+        except (MoodleError, httpx.HTTPError) as exc:
+            log.warning(
+                "iTa'leem outline %s failed for user %s: %s",
+                course.course_id,
+                account.user_id,
+                exc,
+            )
+            continue
+        files = _outline_files(account, outline)
+        if course.course_id not in state.file_ready:
+            state.files.update(files)
+            state.file_ready.add(course.course_id)
+        else:
+            for uid, (filename, module_name) in files.items():
+                if uid in state.files:
+                    continue
+                state.files.add(uid)
+                location = " · ".join(
+                    part for part in (course.shortname or course.fullname, module_name) if part
+                )
+                items.append(
+                    {
+                        "key": f"file:{uid}",
+                        "group": "New files",
+                        "title": filename,
+                        "body": location,
+                        "url": f"/courses/{course.id}",
+                        "tone": "muted",
+                    }
+                )
+        course.outline = outline
+        course.outline_at = now
+
+
+def _grade_rows(rows: list[dict]) -> list[dict]:
+    cached: list[dict] = []
+    for row in rows[:300]:
+        cached.append(
+            {
+                "id": row.get("id"),
+                "name": html_to_text(str(row.get("itemname") or ""), 200),
+                "itemtype": str(row.get("itemtype") or "")[:40],
+                "itemmodule": str(row.get("itemmodule") or "")[:40],
+                "iteminstance": row.get("iteminstance"),
+                "grade": html_to_text(str(row.get("gradeformatted") or ""), 50),
+                "max": html_to_text(str(row.get("grademax") or ""), 50),
+                "percentage": html_to_text(str(row.get("percentageformatted") or ""), 50),
+                "feedback": html_to_text(str(row.get("feedback") or ""), 1000),
+                "cmid": row.get("cmid"),
+                "hidden": bool(row.get("gradeishidden") or row.get("gradehiddenbydate")),
+            }
+        )
+    return cached
+
+
+def _grade_visible(row: dict) -> bool:
+    if row.get("hidden"):
+        return False
+    if str(row.get("itemtype") or "") not in {"mod", "manual"}:
+        return False
+    grade = str(row.get("grade") or "").strip()
+    return bool(grade) and grade != "-"
+
+
+def _grade_key(course: MoodleCourse, row: dict) -> str:
+    identity = row.get("id") or row.get("cmid") or row.get("name") or "item"
+    return f"{course.course_id}:{identity}"
+
+
+def _grade_fingerprint(row: dict) -> str:
+    grade = str(row.get("grade") or "").strip()
+    feedback = str(row.get("feedback") or "").strip()
+    digest = hashlib.sha1(feedback.encode("utf-8")).hexdigest()[:12] if feedback else ""
+    return f"{grade}|{digest}"
+
+
+def _grade_item(course: MoodleCourse, row: dict, *, changed: bool) -> email_services.ItaleemItem:
+    name = str(row.get("name") or "iTa'leem grade")[:200]
+    grade = str(row.get("grade") or "").strip()
+    maximum = str(row.get("max") or "").strip()
+    value = f"{grade} / {maximum}" if maximum else grade
+    label = "Grade updated" if changed else "New grade"
+    body = f"{label} · {course.shortname or course.fullname} · {value}"
+    feedback = _excerpt(row.get("feedback"), 250)
+    if feedback:
+        body = f"{body} — {feedback}"
+    return {
+        "key": f"grade:{_grade_key(course, row)}:{_grade_fingerprint(row)}",
+        "group": "Grades",
+        "title": name,
+        "body": body,
+        "url": f"/courses/{course.id}",
+        "tone": "muted",
+    }
+
+
+def _collect_grades(
+    api: MoodleClient,
+    account: MoodleAccount,
+    courses: list[MoodleCourse],
+    state: _SeenState,
+    items: list[email_services.ItaleemItem],
+    now: datetime,
+) -> None:
+    for course in courses:
+        cached = list(course.grades or [])
+        stale = course.grades_at is None or now - (_aware(course.grades_at) or now) >= GRADES_TTL
+        needs_fetch = (
+            course.course_id not in state.grade_ready
+            or stale
+            or any(not row.get("id") or not row.get("itemtype") for row in cached)
+        )
+        if needs_fetch:
+            try:
+                rows = api.grades(course.course_id, account.moodle_user_id or 0)
+            except (MoodleError, httpx.HTTPError) as exc:
+                log.warning(
+                    "iTa'leem grades %s failed for user %s: %s",
+                    course.course_id,
+                    account.user_id,
+                    exc,
+                )
+                continue
+            cached = _grade_rows(rows)
+            course.grades = cached
+            course.grades_at = now
+
+        if course.course_id not in state.grade_ready:
+            for row in cached:
+                if _grade_visible(row):
+                    state.grades[_grade_key(course, row)] = _grade_fingerprint(row)
+            state.grade_ready.add(course.course_id)
+            continue
+
+        for row in cached:
+            if not _grade_visible(row):
+                continue
+            key = _grade_key(course, row)
+            fingerprint = _grade_fingerprint(row)
+            old = state.grades.get(key)
+            if old is None:
+                items.append(_grade_item(course, row, changed=False))
+                state.grades[key] = fingerprint
+            elif old != fingerprint:
+                items.append(_grade_item(course, row, changed=True))
+                state.grades[key] = fingerprint
+
+
+def collect_updates(db: DbSession, user: User, account: MoodleAccount) -> list[email_services.ItaleemItem]:
+    """Compare iTa'leem with the last noticed state and return new items.
+
+    Called by the scheduled maintenance entry point only; the app's own sync
+    path stays fast and never sends mail. Commits the new seen state and the
+    refreshed outlines/grade caches.
+    """
+    moment = utcnow()
+    state = _SeenState.load(account.seen)
+    items: list[email_services.ItaleemItem] = []
+    courses = list(db.scalars(select(MoodleCourse).where(MoodleCourse.user_id == user.id)).all())
+    active = [course for course in courses if not course.archived]
+    functions = {str(name) for name in account.functions or []}
+    api = _api(db, account)
+
+    _collect_deadlines(db, user, courses, state, items, moment)
+
+    if active and "mod_forum_get_forums_by_courses" in functions:
+        try:
+            forums = api.forums([course.course_id for course in active])
+        except (MoodleError, httpx.HTTPError) as exc:
+            log.warning("iTa'leem forums failed for user %s: %s", user.id, exc)
+            forums = []
+        if forums and "mod_forum_get_forum_discussions" in functions:
+            _collect_forums(api, account, active, forums, state, items, functions)
+
+    if active and "core_course_get_contents" in functions:
+        _collect_files(api, account, active, state, items, moment)
+
+    if active and "gradereport_user_get_grade_items" in functions:
+        _collect_grades(api, account, active, state, items, moment)
+
+    account.seen = state.dump()
+    db.commit()
+    return items
+
+
+def sync_all(db: DbSession, *, dry_run: bool = False, notify: bool = False) -> dict[str, int]:
+    """Scheduler entry point: refresh every connected iTa'leem account.
+
+    With `notify`, also scan announcements, files, grades and imported deadlines
+    and send one batched email per account. The first scan only records a
+    baseline, so connecting an account never dumps its backlog into the inbox.
+    """
+    counts = {
+        "accounts": 0,
+        "courses": 0,
+        "deadlines": 0,
+        "events": 0,
+        "failed": 0,
+        "updates": 0,
+        "emails": 0,
+    }
     accounts = db.scalars(select(MoodleAccount)).all()
     for account in accounts:
         user = db.get(User, account.user_id)
@@ -805,6 +1346,25 @@ def sync_all(db: DbSession, *, dry_run: bool = False) -> dict[str, int]:
         counts["courses"] += result.get("courses", 0)
         counts["deadlines"] += result.get("deadlines", 0)
         counts["events"] += result.get("events", 0)
+        if not notify:
+            continue
+        try:
+            items = collect_updates(db, user, account)
+        except Exception:  # noqa: BLE001 - sync data is already saved
+            db.rollback()
+            counts["failed"] += 1
+            log.warning("iTa'leem update scan failed for user %s", account.user_id, exc_info=True)
+            continue
+        counts["updates"] += len(items)
+        if not items:
+            continue
+        try:
+            email_log = email_services.send_italeem_update(db, user=user, items=items)
+        except Exception:  # noqa: BLE001 - mail is best-effort
+            log.warning("iTa'leem update email failed for user %s", account.user_id, exc_info=True)
+            continue
+        if email_log is not None and email_log.status in {"sent", "logged"}:
+            counts["emails"] += 1
     return counts
 
 
@@ -879,9 +1439,7 @@ def require_course(db: DbSession, user: User, course_id: uuid.UUID) -> MoodleCou
     return course
 
 
-def refresh_outline(
-    db: DbSession, user: User, course: MoodleCourse, *, force: bool = False
-) -> str | None:
+def refresh_outline(db: DbSession, user: User, course: MoodleCourse, *, force: bool = False) -> str | None:
     fresh = (
         course.outline
         and course.outline_at
@@ -919,9 +1477,7 @@ def _module_description(module: dict) -> str:
 def _saved_note_ids(db: DbSession, user: User, uids: set[str]) -> dict[str, str]:
     if not uids:
         return {}
-    rows = db.scalars(
-        select(Note).where(Note.owner_id == user.id, Note.external_uid.in_(uids))
-    ).all()
+    rows = db.scalars(select(Note).where(Note.owner_id == user.id, Note.external_uid.in_(uids))).all()
     return {str(row.external_uid): str(row.id) for row in rows if row.external_uid}
 
 
@@ -1046,9 +1602,7 @@ def _submission_state(payload: dict) -> str:
     return "notsubmitted"
 
 
-def refresh_assignment_status(
-    db: DbSession, user: User, assignment: MoodleAssignment
-) -> bool:
+def refresh_assignment_status(db: DbSession, user: User, assignment: MoodleAssignment) -> bool:
     """Fetch one submission status. A single failure must not break a page."""
     account = require_account(db, user)
     api = _api(db, account)
@@ -1077,17 +1631,12 @@ def refresh_submission_status(
         )
     ).all()
     for row in rows:
-        fresh = (
-            row.status_at is not None
-            and utcnow() - (_aware(row.status_at) or utcnow()) < SUBMISSION_TTL
-        )
+        fresh = row.status_at is not None and utcnow() - (_aware(row.status_at) or utcnow()) < SUBMISSION_TTL
         if (force or not fresh) and not refresh_assignment_status(db, user, row):
             break
 
 
-def course_detail(
-    db: DbSession, user: User, course_id: uuid.UUID, *, force: bool = False
-) -> CourseDetailOut:
+def course_detail(db: DbSession, user: User, course_id: uuid.UUID, *, force: bool = False) -> CourseDetailOut:
     course = require_course(db, user, course_id)
     account = require_account(db, user)
     outline_error = refresh_outline(db, user, course, force=force)
@@ -1105,9 +1654,7 @@ def course_detail(
 
 def refresh_grades(db: DbSession, user: User, course: MoodleCourse, *, force: bool = False) -> None:
     fresh = (
-        course.grades
-        and course.grades_at
-        and utcnow() - (_aware(course.grades_at) or utcnow()) < GRADES_TTL
+        course.grades and course.grades_at and utcnow() - (_aware(course.grades_at) or utcnow()) < GRADES_TTL
     )
     if fresh and not force:
         return
@@ -1119,17 +1666,7 @@ def refresh_grades(db: DbSession, user: User, course: MoodleCourse, *, force: bo
         raise InvalidError(RECONNECT) from exc
     except (MoodleError, httpx.HTTPError) as exc:
         raise UnavailableError(str(exc) if isinstance(exc, MoodleError) else UNREACHABLE) from None
-    course.grades = [
-        {
-            "name": html_to_text(str(row.get("itemname") or ""), 200),
-            "grade": html_to_text(str(row.get("gradeformatted") or ""), 50),
-            "max": html_to_text(str(row.get("grademax") or ""), 50),
-            "percentage": str(row.get("percentageformatted") or "")[:50],
-            "feedback": html_to_text(str(row.get("feedback") or ""), 1000),
-            "cmid": row.get("cmid"),
-        }
-        for row in rows
-    ][:300]
+    course.grades = _grade_rows(rows)
     course.grades_at = utcnow()
     db.commit()
 
@@ -1170,11 +1707,7 @@ def save_file(
             break
     if module is None:
         raise NotFoundError("That iTa'leem activity is no longer in the course.")
-    files = [
-        row
-        for row in module.get("contents") or []
-        if row.get("type") == "file" and row.get("fileurl")
-    ]
+    files = [row for row in module.get("contents") or [] if row.get("type") == "file" and row.get("fileurl")]
     if file_index >= len(files):
         raise NotFoundError("That file is no longer in the course.")
     content = files[file_index]

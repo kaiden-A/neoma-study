@@ -28,6 +28,7 @@ const KIND_ROWS: { key: keyof NotificationKinds; label: string; help: string }[]
   { key: "exams", label: "Exams", help: "Countdown at 7, 3, 2, 1 and 0 days out." },
   { key: "notes", label: "Shared notes", help: "New notes posted in your groups." },
   { key: "review", label: "Cards to review", help: "When spaced-repetition cards are due." },
+  { key: "italeem", label: "iTa'leem updates", help: "New announcements, files, grades and imported deadlines." },
 ];
 
 const MCP_TOOLS = [

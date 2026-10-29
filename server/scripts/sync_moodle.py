@@ -18,10 +18,15 @@ from app.services import moodle_services  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sync Neoma with iTa'leem.")
     parser.add_argument("--dry-run", action="store_true", help="Count accounts without writing.")
+    parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Scan announcements, files and grades and email new items.",
+    )
     args = parser.parse_args()
 
     with SessionLocal() as db:
-        result = moodle_services.sync_all(db, dry_run=args.dry_run)
+        result = moodle_services.sync_all(db, dry_run=args.dry_run, notify=args.notify)
     print(result)
 
 

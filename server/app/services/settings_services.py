@@ -19,6 +19,7 @@ class NotificationKinds(BaseModel):
     exams: bool = True
     notes: bool = True
     review: bool = True
+    italeem: bool = True
 
 
 class GoogleSettings(BaseModel):
