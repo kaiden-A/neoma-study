@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     librechat_api_key: str = ""
     librechat_refine_agent_id: str = ""
     librechat_chat_agent_id: str = ""
-    librechat_timeout_seconds: float = 25.0
+    # Refine calls can take 15-30s on a cold agent; do not cut them off at 25s.
+    librechat_timeout_seconds: float = 60.0
 
     @property
     def ai_refine_configured(self) -> bool:

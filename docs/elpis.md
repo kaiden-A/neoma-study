@@ -141,6 +141,9 @@ Expected with both agents configured:
   cohort.
 - **The agents have tools.** They should not. The card editor needs text in and
   JSON out; the dock is read-only and cannot write to Neoma.
+- **Refine can be slow.** A cold agent can take 15–30 seconds before the first
+  token; `LIBRECHAT_TIMEOUT_SECONDS` defaults to 60. Lower it only if you would
+  rather fall back to the rules cards sooner.
 - **SSE through proxies.** The browser reaches Neoma through Vercel and
   Firebase. If a hop buffers `text/event-stream`, the reply appears at once
   instead of streaming; the UI still works.
