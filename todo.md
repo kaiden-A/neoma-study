@@ -173,6 +173,11 @@ One stop centre for studying:
       proxies Elpis SSE into `{"text"}` frames. The thread lives in
       sessionStorage, is read-only, and hidden until `LIBRECHAT_CHAT_AGENT_ID`
       is configured.
+- [x] Quiz cards (30 Oct 2026): migration `94d323a0d272` adds `kind`,
+      `options` and `answer_index`. The Generate modal gets a **Multiple
+      choice** toggle; without Elpis it fills wrong options from the other
+      answers in the batch. `/review` renders the options, marks correct/wrong
+      and grades `good`/`again` on Enter.
 
 ### 3.3 Progress & habit
 

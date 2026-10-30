@@ -450,6 +450,9 @@ export interface Flashcard {
   noteTitle: string | null;
   front: string;
   back: string;
+  kind: FlashcardKind;
+  options: string[];
+  answerIndex: number | null;
   sourceHighlightId: string | null;
   dueAt: number;
   intervalDays: number;
@@ -474,7 +477,7 @@ export interface FlashcardPatchInput {
   suspended?: boolean;
 }
 
-export type FlashcardKind = "basic" | "cloze";
+export type FlashcardKind = "basic" | "cloze" | "choice";
 
 export interface FlashcardDraft {
   front: string;

@@ -184,7 +184,12 @@ interface StoreValue {
   dueCards: (now?: number) => Flashcard[];
   cardsForNote: (noteId: string) => Flashcard[];
   createCard: (input: FlashcardInput) => Promise<Flashcard>;
-  generateCards: (noteId: string, count?: number, refine?: boolean) => Promise<GenerateCardsResponse>;
+  generateCards: (
+    noteId: string,
+    count?: number,
+    refine?: boolean,
+    quiz?: boolean,
+  ) => Promise<GenerateCardsResponse>;
   createCards: (noteId: string, cards: FlashcardDraft[]) => Promise<Flashcard[]>;
   updateCard: (id: string, patch: FlashcardPatchInput) => Promise<Flashcard>;
   deleteCard: (id: string) => Promise<void>;
@@ -1133,8 +1138,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         replaceCard(card);
         return card;
       },
-      generateCards: async (noteId, count = 10, refine = false) =>
-        apiPost<GenerateCardsResponse>("/api/flashcards/generate", { noteId, count, refine }),
+      generateCards: async (noteId, count = 10, refine = false, quiz = false) =>
+        apiPost<GenerateCardsResponse>("/api/flashcards/generate", { noteId, count, refine, quiz }),
       createCards: async (noteId, cards) => {
         const created = await apiPost<Flashcard[]>("/api/flashcards/bulk", { noteId, cards });
         if (created.length) setFlashcards((current) => [...current, ...created]);

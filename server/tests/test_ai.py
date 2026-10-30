@@ -247,12 +247,15 @@ def test_generate_refine_wiring(client: TestClient, sign_in, make_user, db, monk
         }
     )
 
-    body = client.post("/api/flashcards/generate", json={"noteId": note["id"], "refine": True}).json()
+    body = client.post(
+        "/api/flashcards/generate", json={"noteId": note["id"], "refine": True, "quiz": True}
+    ).json()
 
     assert body["engine"] == "ai" and body["refined"] is True
     assert body["notice"] is None
     assert body["cards"][0]["front"] == "In your own words, what is entropy?"
     assert body["cards"][0]["back"] == "a state function."
+    assert body["cards"][0]["kind"] == "choice"
     assert len(body["cards"][0]["distractors"]) == 3
 
 

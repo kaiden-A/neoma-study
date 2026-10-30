@@ -11,13 +11,14 @@ one. A preview step lets the reader drop or edit anything before it is saved.
 | `POST` | `/api/flashcards/generate` | Draft cards from a note; **never writes** |
 | `POST` | `/api/flashcards/bulk` | Save the picked drafts in one commit |
 
-Both take `noteId`; generate also takes `count` (1-30) and `refine` (reserved
-for the Elpis pass), bulk takes up to 50 `cards`.
+Both take `noteId`; generate also takes `count` (1-30), `refine` (the Elpis
+pass) and `quiz` (multiple-choice mode), bulk takes up to 50 `cards`.
 
-A draft is `{ front, back, kind, source, page, duplicate }`. `source` is the
-note text the card came from, `page` comes from the extracted PDF/deck text,
-and `duplicate` is computed against the caller's existing cards on that note.
-Neither is stored on the flashcard row.
+A draft is `{ front, back, kind, source, page, duplicate, distractors }`.
+`source` is the note text the card came from, `page` comes from the extracted
+PDF/deck text, and `duplicate` is computed against the caller's existing cards
+on that note. None of those three is stored on the flashcard row;
+`distractors` becomes the quiz options.
 
 ## What the rules engine reads
 
@@ -60,3 +61,21 @@ ever changing the answer**. The server re-validates every returned question:
 
 The client only shows the "Refine with Elpis" toggle when
 `/api/bootstrap` reports `ai.refine`. Setup lives in `docs/elpis.md`.
+
+## Quiz cards
+
+`quiz: true` turns a draft into a multiple-choice card:
+
+- Before the AI pass, the server fills `distractors` with up to three **other
+  answers from the same batch**. That keeps quiz mode usable without a key.
+- The AI refine replaces them with better wrong options when it is connected.
+- On save, `options` is `[answer, ...distractors]`, shuffled, and
+  `answer_index` points at the correct one. The answer itself still lives in
+  `back`; the options are presentation only.
+- Without `quiz`, any distractors are dropped and the card stays a flip or
+  cloze card.
+
+`/review` renders the options; picking one shows correct/wrong, keys `1-n`
+pick an option, and Enter grades the card (`good` when correct, `again` when
+wrong). Basic and cloze cards keep the reveal-and-grade flow. The schema change
+is migration `94d323a0d272` (`kind`, `options`, `answer_index`).

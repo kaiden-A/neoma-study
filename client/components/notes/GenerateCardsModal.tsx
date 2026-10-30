@@ -22,6 +22,7 @@ export function GenerateCardsModal({
   const { toast } = useOverlays();
   const [count, setCount] = useState<number>(10);
   const [refine, setRefine] = useState(true);
+  const [quiz, setQuiz] = useState(false);
   const [result, setResult] = useState<GenerateCardsResponse | null>(null);
   const [drafts, setDrafts] = useState<FlashcardDraft[]>([]);
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -39,7 +40,7 @@ export function GenerateCardsModal({
     setBusy(true);
     setError(null);
     try {
-      const response = await store.generateCards(noteId, count, refine && aiReady);
+      const response = await store.generateCards(noteId, count, refine && aiReady, quiz);
       setResult(response);
       setDrafts(response.cards);
       setPicked(new Set(response.cards.flatMap((card, index) => (card.duplicate ? [] : [index]))));
@@ -168,6 +169,21 @@ export function GenerateCardsModal({
         ) : null}
       </div>
 
+      <div className="nm-genintro">
+        <label className="nm-check nm-check--switch">
+          <input
+            type="checkbox"
+            checked={quiz}
+            disabled={busy || saving}
+            onChange={(event) => setQuiz(event.target.checked)}
+          />
+          <span>Multiple choice</span>
+        </label>
+        <span className="nm-help">
+          Uses the other answers as wrong options; Elpis improves them when connected.
+        </span>
+      </div>
+
       {error ? <p className="nm-error">{error}</p> : null}
 
       {busy ? (
@@ -227,7 +243,7 @@ export function GenerateCardsModal({
                           onChange={() => toggle(index)}
                         />
                         <span className="nm-gencard-kind">
-                          {draft.kind === "cloze" ? "Cloze" : "Q&A"}
+                          {draft.kind === "choice" ? "Quiz" : draft.kind === "cloze" ? "Cloze" : "Q&A"}
                         </span>
                       </label>
                       {draft.duplicate ? (
@@ -254,6 +270,12 @@ export function GenerateCardsModal({
                       <p className="nm-gencard-source">
                         “{draft.source}”
                         {draft.page ? ` · p. ${draft.page}` : ""}
+                      </p>
+                    ) : null}
+                    {draft.distractors.length ? (
+                      <p className="nm-gencard-source">
+                        {draft.distractors.length} wrong option
+                        {draft.distractors.length === 1 ? "" : "s"} · {draft.distractors.join(" · ")}
                       </p>
                     ) : null}
                   </li>

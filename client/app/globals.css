@@ -1934,6 +1934,32 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 }
 .nm-reviewcard-flip { align-self: flex-start; }
 .nm-reviewcard .nm-help { margin-top: auto; }
+.nm-review-options { display: grid; gap: 8px; margin: 6px 0 2px; }
+.nm-review-option {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 10px 12px; text-align: left; font: inherit; font-size: 0.9rem; line-height: 1.45;
+  border: 1px solid var(--rule); border-radius: var(--radius-control);
+  background: var(--card); color: var(--ink); cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.nm-review-option:hover:not(:disabled) { border-color: var(--ink-muted); }
+.nm-review-option:disabled { cursor: default; }
+.nm-review-option-key {
+  flex: none; width: 22px; height: 22px; display: grid; place-items: center;
+  border-radius: 6px; background: var(--muted-bg); font-size: 0.68rem;
+}
+.nm-review-option.is-correct {
+  border-color: var(--mark-mint);
+  background: color-mix(in srgb, var(--mark-mint) 14%, var(--card));
+}
+.nm-review-option.is-wrong {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--card));
+}
+.nm-review-option.is-chosen:not(.is-correct):not(.is-wrong) { border-color: var(--ink); }
+.nm-review-feedback { margin: 0 0 4px; font-size: 0.86rem; }
+.nm-review-feedback.is-correct { color: var(--ink); font-weight: 600; }
+.nm-review-feedback.is-wrong { color: var(--danger); }
 .nm-review-grades { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .nm-review-grades .nm-btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
 .nm-review-hint { margin-top: 8px; }

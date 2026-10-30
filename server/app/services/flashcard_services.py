@@ -5,8 +5,10 @@ Cards are personal study aids: a member can card any note they can see
 in services/srs.py; this module only moves rows.
 """
 
+import random
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -18,6 +20,7 @@ from ..schemas.study import (
     FlashcardCreate,
     FlashcardDraft,
     FlashcardGrade,
+    FlashcardKind,
     FlashcardOut,
     FlashcardPatch,
     GenerateCardsRequest,
@@ -38,6 +41,9 @@ def card_out(db: DbSession, card: Flashcard) -> FlashcardOut:
         noteTitle=note.title if note else None,
         front=card.front,
         back=card.back,
+        kind=cast(FlashcardKind, card.kind),
+        options=card.options or [],
+        answerIndex=card.answer_index,
         sourceHighlightId=card.source_highlight_id,
         dueAt=to_ms(card.due_at) or 0,
         intervalDays=card.interval_days,
@@ -119,6 +125,58 @@ def _file_text(db: DbSession, user: User, note: Note) -> str | None:
     return file.extracted_text or None
 
 
+def _quiz_distractors(cards: list[FlashcardDraft]) -> None:
+    """Use the other answers in the same batch as fallback wrong options.
+
+    The AI refine pass replaces these with better ones when it is connected;
+    this keeps quiz mode usable without a key.
+    """
+    answers = [card.back.strip() for card in cards if card.back.strip()]
+    for card in cards:
+        if card.distractors:
+            continue
+        answer_key = _front_key(card.back)
+        seen = {answer_key}
+        picked: list[str] = []
+        candidates = sorted(
+            (value for value in answers if _front_key(value) != answer_key),
+            key=lambda value: abs(len(value) - len(card.back)),
+        )
+        for value in candidates:
+            key = _front_key(value)
+            if key in seen:
+                continue
+            seen.add(key)
+            picked.append(value[:200])
+            if len(picked) == 3:
+                break
+        card.distractors = picked
+
+
+def _choice_options(draft: FlashcardDraft) -> tuple[list[str], int | None]:
+    """(shuffled options, correct index) for a quiz card; ([], None) otherwise."""
+    if draft.kind != "choice":
+        return [], None
+    correct = draft.back.strip()[:200]
+    if not correct:
+        return [], None
+    seen = {_front_key(correct)}
+    options = [correct]
+    for value in draft.distractors:
+        text = value.strip()[:200]
+        key = _front_key(text)
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        options.append(text)
+        if len(options) == 4:
+            break
+    if len(options) < 2:
+        return [], None
+    random.SystemRandom().shuffle(options)
+    return options, options.index(correct)
+
+
 def generate_cards(db: DbSession, user: User, data: GenerateCardsRequest) -> GenerateCardsResponse:
     """Draft cards from the note (and its PDF/deck text); never writes rows."""
     note = note_services.require_note(db, user, _note_uuid(data.noteId))
@@ -143,9 +201,20 @@ def generate_cards(db: DbSession, user: User, data: GenerateCardsRequest) -> Gen
     ]
     refined = False
     configured = False
+    if data.quiz:
+        _quiz_distractors(cards)
     if data.refine:
         outcome = ai_services.refine_cards(cards, note_title=note.title)
         cards, refined, configured = outcome.cards, outcome.refined, outcome.configured
+    prepared: list[FlashcardDraft] = []
+    for card in cards:
+        if not data.quiz:
+            prepared.append(card.model_copy(update={"distractors": []}))
+        elif card.distractors:
+            prepared.append(card.model_copy(update={"kind": "choice"}))
+        else:
+            prepared.append(card)
+    cards = prepared
     cards = [card.model_copy(update={"duplicate": _front_key(card.front) in existing}) for card in cards]
     notice = None
     if data.refine and not refined:
@@ -177,12 +246,17 @@ def create_cards(db: DbSession, user: User, data: BulkCardsRequest) -> list[Flas
         if key in seen:
             continue
         seen.add(key)
+        options, answer_index = _choice_options(draft)
+        kind = "choice" if options else ("cloze" if draft.kind == "cloze" else "basic")
         rows.append(
             Flashcard(
                 owner_id=user.id,
                 note_id=note.id,
                 front=front[:1000],
                 back=draft.back.strip()[:2000],
+                kind=kind,
+                options=options or None,
+                answer_index=answer_index,
             )
         )
     if not rows:

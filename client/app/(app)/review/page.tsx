@@ -28,10 +28,14 @@ export default function ReviewPage() {
   const queue = store.dueCards(now);
   const card: Flashcard | null = queue[0] ?? null;
   const [revealedId, setRevealedId] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<{ id: string; index: number } | null>(null);
   const [graded, setGraded] = useState(0);
   const [busy, setBusy] = useState(false);
   const total = queue.length + graded;
-  const revealed = Boolean(card && revealedId === card.id);
+  const isChoice = Boolean(card && card.kind === "choice" && (card.options?.length ?? 0) >= 2);
+  const picked = card && answer?.id === card.id ? answer.index : null;
+  const revealed = Boolean(card && (isChoice ? picked !== null : revealedId === card.id));
+  const correct = Boolean(card && isChoice && picked !== null && picked === card.answerIndex);
 
   const grade = useCallback(
     async (value: FlashcardGrade) => {
@@ -40,6 +44,8 @@ export default function ReviewPage() {
       try {
         await store.gradeCard(card.id, value);
         setGraded((count) => count + 1);
+        setAnswer(null);
+        setRevealedId(null);
       } catch {
         // The store rolls back and toasts.
       }
@@ -50,7 +56,22 @@ export default function ReviewPage() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (!card) return;
+      if (!card || busy) return;
+      if (isChoice) {
+        if (picked === null) {
+          const index = Number(event.key) - 1;
+          if (Number.isInteger(index) && index >= 0 && index < card.options.length) {
+            event.preventDefault();
+            setAnswer({ id: card.id, index });
+          }
+          return;
+        }
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          void grade(correct ? "good" : "again");
+        }
+        return;
+      }
       if (event.key === " " || event.key === "Enter") {
         event.preventDefault();
         setRevealedId(card.id);
@@ -64,7 +85,7 @@ export default function ReviewPage() {
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [card, grade, revealedId]);
+  }, [busy, card, correct, grade, isChoice, picked, revealedId]);
 
   return (
     <div className="nm-page">
@@ -112,7 +133,42 @@ export default function ReviewPage() {
               ) : null}
             </div>
             <p className="nm-reviewcard-front">{card.front}</p>
-            {revealed ? (
+            {isChoice ? (
+              <>
+                <div className="nm-review-options" role="group" aria-label="Choose an answer">
+                  {card.options.map((option, index) => {
+                    const chosen = picked === index;
+                    const isCorrect = revealed && card.answerIndex === index;
+                    const isWrong = revealed && chosen && card.answerIndex !== index;
+                    return (
+                      <button
+                        key={`${index}-${option}`}
+                        type="button"
+                        className={`nm-review-option${chosen ? " is-chosen" : ""}${
+                          isCorrect ? " is-correct" : ""
+                        }${isWrong ? " is-wrong" : ""}`}
+                        disabled={revealed || busy}
+                        onClick={() => setAnswer({ id: card.id, index })}
+                      >
+                        <span className="nm-mono nm-review-option-key">{index + 1}</span>
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+                {revealed ? (
+                  <p className={`nm-review-feedback${correct ? " is-correct" : " is-wrong"}`}>
+                    {correct
+                      ? "Correct."
+                      : `Not quite — the answer is “${card.options[card.answerIndex ?? 0]}”`}
+                  </p>
+                ) : (
+                  <p className="nm-help">
+                    Pick the answer that fits. Keys 1–{card.options.length} work too.
+                  </p>
+                )}
+              </>
+            ) : revealed ? (
               <p className="nm-reviewcard-back">{card.back || "No answer written yet."}</p>
             ) : (
               <button
@@ -133,23 +189,40 @@ export default function ReviewPage() {
             </p>
           </article>
 
-          <div className="nm-review-grades" role="group" aria-label="Grade this card">
-            {GRADES.map((item) => (
+          {isChoice ? (
+            <div className="nm-review-grades">
               <button
-                key={item.id}
                 type="button"
-                className={`nm-btn ${item.className}`}
+                className="nm-btn nm-btn--primary"
                 disabled={!revealed || busy}
-                onClick={() => void grade(item.id)}
+                onClick={() => void grade(correct ? "good" : "again")}
               >
-                <span>{item.label}</span>
-                <kbd className="nm-kbd">{item.key}</kbd>
+                <span>{correct ? "Correct — next card" : "Not quite — next card"}</span>
+                <kbd className="nm-kbd">Enter</kbd>
               </button>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="nm-review-grades" role="group" aria-label="Grade this card">
+              {GRADES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`nm-btn ${item.className}`}
+                  disabled={!revealed || busy}
+                  onClick={() => void grade(item.id)}
+                >
+                  <span>{item.label}</span>
+                  <kbd className="nm-kbd">{item.key}</kbd>
+                </button>
+              ))}
+            </div>
+          )}
           <p className="nm-help nm-review-hint">
-            Press <span className="nm-mono">Space</span> to reveal, then <span className="nm-mono">1–4</span> to grade.
-            Keys 1–4 only work after the answer is showing.
+            {isChoice
+              ? picked === null
+                ? `Press 1–${card.options.length} to answer.`
+                : "Press Enter for the next card."
+              : "Press Space to reveal, then 1–4 to grade. Keys 1–4 only work after the answer is showing."}
           </p>
         </>
       ) : (

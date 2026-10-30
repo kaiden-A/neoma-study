@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base
@@ -23,6 +24,12 @@ class Flashcard(Base):
     )
     front: Mapped[str] = mapped_column(String(1000), nullable=False)
     back: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    # "basic" (flip), "cloze" (blank in the front) or "choice" (quiz options).
+    kind: Mapped[str] = mapped_column(String(16), default="basic", server_default="basic", nullable=False)
+    # For choice cards: the shuffled options and the index of the correct one.
+    # The answer itself lives in `back`; these are only presentation.
+    options: Mapped[list[str] | None] = mapped_column(JSONB)
+    answer_index: Mapped[int | None] = mapped_column(Integer)
     source_highlight_id: Mapped[str | None] = mapped_column(String(64))
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     interval_days: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

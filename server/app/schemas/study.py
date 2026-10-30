@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from ..models.enums import NoteType
 
 FlashcardGrade = Literal["again", "hard", "good", "easy"]
-FlashcardKind = Literal["basic", "cloze"]
+FlashcardKind = Literal["basic", "cloze", "choice"]
 
 
 class FlashcardOut(BaseModel):
@@ -14,6 +14,9 @@ class FlashcardOut(BaseModel):
     noteTitle: str | None
     front: str
     back: str
+    kind: FlashcardKind
+    options: list[str]
+    answerIndex: int | None
     sourceHighlightId: str | None
     dueAt: int
     intervalDays: float
@@ -47,6 +50,7 @@ class GenerateCardsRequest(BaseModel):
     noteId: str
     count: int = Field(default=10, ge=1, le=30)
     refine: bool = False
+    quiz: bool = False
 
 
 class GenerateCardsResponse(BaseModel):

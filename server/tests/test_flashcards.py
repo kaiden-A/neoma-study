@@ -207,6 +207,50 @@ def test_generate_validates_count_and_empty_note(
     assert empty["cards"] == []
 
 
+def test_generate_quiz_saves_shuffled_options(client: TestClient, sign_in, make_user, db: DbSession) -> None:
+    sign_in(make_user(db))
+    note = _note(
+        client,
+        body=(
+            "Entropy: a measure of disorder\n"
+            "Enthalpy: heat content at constant pressure\n"
+            "Osmosis: movement of water across a membrane\n"
+            "Catalyst: speeds a reaction without being consumed"
+        ),
+    )
+
+    preview = client.post(
+        "/api/flashcards/generate", json={"noteId": note["id"], "count": 10, "quiz": True}
+    ).json()
+    assert preview["cards"]
+    assert all(card["kind"] == "choice" for card in preview["cards"])
+    assert all(len(card["distractors"]) >= 1 for card in preview["cards"])
+
+    saved = client.post("/api/flashcards/bulk", json={"noteId": note["id"], "cards": preview["cards"]}).json()
+    assert len(saved) == len(preview["cards"])
+    for card in saved:
+        assert card["kind"] == "choice"
+        assert len(card["options"]) >= 2
+        assert card["answerIndex"] is not None
+        assert card["options"][card["answerIndex"]] == card["back"]
+
+
+def test_generate_without_quiz_stays_a_flip_card(
+    client: TestClient, sign_in, make_user, db: DbSession
+) -> None:
+    sign_in(make_user(db))
+    note = _note(client, body="Entropy: a measure of disorder\nEnthalpy: heat content")
+
+    preview = client.post("/api/flashcards/generate", json={"noteId": note["id"]}).json()
+    assert preview["cards"][0]["kind"] == "basic"
+    assert preview["cards"][0]["distractors"] == []
+
+    saved = client.post("/api/flashcards/bulk", json={"noteId": note["id"], "cards": preview["cards"]}).json()
+    assert saved[0]["kind"] == "basic"
+    assert saved[0]["options"] == []
+    assert saved[0]["answerIndex"] is None
+
+
 def test_srs_schedule_math() -> None:
     now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
