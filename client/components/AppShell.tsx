@@ -11,6 +11,7 @@ import { MoonMark } from "@/components/MoonMark";
 import { RouteProgress } from "@/components/RouteProgress";
 import { RouteSkeleton } from "@/components/skeletons/RouteSkeleton";
 import { QuickCapture } from "@/components/QuickCapture";
+import { AssistantDock } from "@/components/assistant/AssistantDock";
 import { Avatar } from "@/components/ui/bits";
 import { Menu } from "@/components/ui/Menu";
 import { apiPost } from "@/lib/api-client";
@@ -84,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
 
-      <div className="nm-shell">
+      <div className={`nm-shell${assistant.open ? " has-assistant" : ""}`}>
         <aside className="nm-rail" aria-label="Primary">
           <Link className="nm-brand" href="/today">
             <span className="nm-brand-mark" aria-hidden="true">
@@ -205,6 +206,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </main>
         </div>
+        <AssistantDock />
       </div>
 
       <nav className="nm-tabbar" aria-label="Sections">

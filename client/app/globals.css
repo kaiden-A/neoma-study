@@ -79,6 +79,7 @@
   --radius-card: 14px;
   --radius-control: 10px;
   --rail-w: 92px;
+  --assistant-w: clamp(340px, 26vw, 420px);
   --font-display: 'Fraunces', Georgia, serif;
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -214,6 +215,9 @@ img { max-width: 100%; display: block; }
 
 /* ---------- 3. shell: margin rail, topbar, tabbar ---------- */
 .nm-shell { display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); min-height: 100vh; }
+.nm-shell.has-assistant {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--assistant-w);
+}
 
 .nm-rail {
   position: sticky;
@@ -1399,7 +1403,7 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
   .nm-cal-side, .nm-note-side { position: static; }
 }
 @media (max-width: 900px) {
-  .nm-shell { grid-template-columns: minmax(0, 1fr); }
+  .nm-shell, .nm-shell.has-assistant { grid-template-columns: minmax(0, 1fr); }
   .nm-rail { display: none; }
   .nm-tabbar {
     display: flex;
@@ -1830,10 +1834,10 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 }
 .nm-assistant-scrim { display: none; }
 .nm-assistant {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 90;
-  width: min(420px, 100vw); display: flex; flex-direction: column;
+  position: sticky; top: 0; z-index: 40;
+  height: 100vh; width: auto; min-width: 0;
+  display: flex; flex-direction: column; overflow: hidden;
   background: var(--card); border-left: 1px solid var(--rule);
-  box-shadow: -18px 0 50px rgba(10, 14, 12, 0.16);
 }
 .nm-assistant-hd {
   display: flex; align-items: center; gap: 10px;
@@ -1882,19 +1886,44 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 }
 .nm-assistant-prose a { text-decoration: underline; }
 .nm-assistant-typing { display: inline-flex; color: var(--ink-muted); }
-.nm-assistant-form {
+.nm-assistant-composer {
   display: flex; align-items: flex-end; gap: 8px;
-  padding: 10px 16px; border-top: 1px solid var(--rule);
+  margin: 10px 14px 6px; padding: 7px 7px 7px 12px;
+  border: 1px solid var(--rule); border-radius: 14px;
+  background: var(--paper);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.nm-assistant-form .nm-textarea { flex: 1; min-height: 44px; max-height: 140px; resize: vertical; }
-.nm-assistant-foot { margin: 0; padding: 0 16px 12px; font-size: 0.68rem; }
-@media (max-width: 720px) {
+.nm-assistant-composer:focus-within {
+  border-color: var(--ink-muted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.nm-assistant-input {
+  flex: 1; min-width: 0; min-height: 24px; max-height: 140px; resize: none;
+  border: 0; outline: 0; background: transparent; color: var(--ink);
+  font: inherit; font-size: 0.88rem; line-height: 1.5; padding: 5px 0;
+}
+.nm-assistant-input::placeholder { color: var(--ink-muted); }
+.nm-assistant-send {
+  flex: none; width: 34px; height: 34px; display: grid; place-items: center;
+  border: 0; border-radius: 999px; background: var(--ink); color: var(--paper);
+  cursor: pointer; transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.nm-assistant-send:hover:not(:disabled) { transform: translateY(-1px); }
+.nm-assistant-send:disabled { opacity: 0.35; cursor: default; }
+.nm-assistant-send.is-stop { background: var(--danger); color: #fff; }
+.nm-assistant-foot {
+  margin: 0; padding: 0 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  font-size: 0.68rem; text-align: center;
+}
+@media (max-width: 900px) {
   .nm-assistant {
-    top: auto; height: min(88dvh, 720px); width: 100vw;
+    position: fixed; top: auto; right: 0; bottom: 0; left: 0;
+    height: min(88dvh, 720px); width: 100vw; z-index: 95;
     border-left: 0; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -18px 50px rgba(10, 14, 12, 0.2);
   }
   .nm-assistant-scrim {
-    display: block; position: fixed; inset: 0; z-index: 89; background: rgba(10, 14, 12, 0.34);
+    display: block; position: fixed; inset: 0; z-index: 94; background: rgba(10, 14, 12, 0.34);
   }
 }
 .nm-pdf-mark { position: absolute; inset: 0; pointer-events: none; z-index: 1; }

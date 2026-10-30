@@ -49,6 +49,7 @@ export function AssistantDock() {
     const text = draft.trim();
     if (!text || busy) return;
     setDraft("");
+    if (inputRef.current) inputRef.current.style.height = "auto";
     void send(text);
   }
 
@@ -150,15 +151,26 @@ export function AssistantDock() {
           {error ? <p className="nm-error">{error}</p> : null}
         </div>
 
-        <div className="nm-assistant-form">
+        <form
+          className="nm-assistant-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
           <textarea
             ref={inputRef}
-            className="nm-textarea"
-            rows={2}
+            className="nm-assistant-input"
+            rows={1}
             placeholder={noteTitle ? "Ask about this note…" : "Ask Elpis…"}
             aria-label="Message Elpis"
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              const field = event.target;
+              field.style.height = "auto";
+              field.style.height = `${Math.min(field.scrollHeight, 140)}px`;
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -167,22 +179,25 @@ export function AssistantDock() {
             }}
           />
           {busy ? (
-            <button type="button" className="nm-btn nm-btn--secondary nm-btn--sm" onClick={stop}>
+            <button
+              type="button"
+              className="nm-assistant-send is-stop"
+              aria-label="Stop the reply"
+              onClick={stop}
+            >
               <i className="fa-solid fa-stop" aria-hidden="true" />
-              Stop
             </button>
           ) : (
             <button
-              type="button"
-              className="nm-btn nm-btn--primary nm-btn--sm"
-              onClick={submit}
+              type="submit"
+              className="nm-assistant-send"
+              aria-label="Send message"
               disabled={!draft.trim()}
             >
               <i className="fa-solid fa-arrow-up" aria-hidden="true" />
-              Send
             </button>
           )}
-        </div>
+        </form>
         <p className="nm-help nm-assistant-foot">Elpis can make mistakes. Check the note.</p>
       </aside>
     </>
