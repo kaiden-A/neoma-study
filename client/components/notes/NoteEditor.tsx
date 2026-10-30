@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { FilePreview } from "@/components/notes/FilePreview";
+import { GenerateCardsModal } from "@/components/notes/GenerateCardsModal";
 import { LinkPreview } from "@/components/notes/LinkPreview";
 import { useNoteActions } from "@/components/notes/NoteActions";
 import { NoteDetailsSheet } from "@/components/notes/NoteDetailsSheet";
@@ -69,6 +70,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileMissing, setFileMissing] = useState(false);
@@ -581,14 +583,24 @@ export function NoteEditor({ noteId }: { noteId: string }) {
       <div className="nm-card-hd">
         <h3 className="nm-card-title">Flashcards</h3>
         <span className="nm-mono nm-meta">{cards.length}</span>
-        <button
-          type="button"
-          className="nm-btn nm-btn--ghost nm-btn--sm nm-study-details"
-          onClick={() => openCardModal()}
-        >
-          <i className="fa-solid fa-plus" aria-hidden="true" />
-          Add card
-        </button>
+        <div className="nm-genactions">
+          <button
+            type="button"
+            className="nm-btn nm-btn--ghost nm-btn--sm"
+            onClick={() => setGenerateOpen(true)}
+          >
+            <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+            Generate
+          </button>
+          <button
+            type="button"
+            className="nm-btn nm-btn--ghost nm-btn--sm"
+            onClick={() => openCardModal()}
+          >
+            <i className="fa-solid fa-plus" aria-hidden="true" />
+            Add card
+          </button>
+        </div>
       </div>
       {cards.length ? (
         <ul className="nm-excerpts-list">
@@ -621,8 +633,8 @@ export function NoteEditor({ noteId }: { noteId: string }) {
         </ul>
       ) : (
         <p className="nm-help">
-          Cards made from this note are reviewed on the Review page. Select text in a PDF to make one from an
-          excerpt.
+          Cards made from this note are reviewed on the Review page. Generate a set from the note text, or
+          select text in a PDF to make one from an excerpt.
         </p>
       )}
     </div>
@@ -973,6 +985,14 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             />
           </Field>
         </Modal>
+      ) : null}
+
+      {generateOpen ? (
+        <GenerateCardsModal
+          noteId={note.id}
+          noteTitle={note.title}
+          onClose={() => setGenerateOpen(false)}
+        />
       ) : null}
 
       {detailsOpen ? (

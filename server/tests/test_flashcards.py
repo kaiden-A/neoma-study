@@ -130,6 +130,83 @@ def test_grade_again_resets(client: TestClient, sign_in, make_user, db: DbSessio
     assert _until(again["dueAt"]) < timedelta(minutes=11)
 
 
+def test_generate_preview_then_bulk_save(client: TestClient, sign_in, make_user, db: DbSession) -> None:
+    sign_in(make_user(db))
+    note = _note(
+        client,
+        body="Entropy: a measure of disorder\nOsmosis is the movement of water across a membrane.",
+    )
+
+    preview = client.post("/api/flashcards/generate", json={"noteId": note["id"], "count": 10})
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["engine"] == "rules" and body["refined"] is False
+    assert body["noteTitle"] == "Thermo week 3"
+    fronts = [card["front"] for card in body["cards"]]
+    assert "What is Entropy?" in fronts
+    assert all(card["duplicate"] is False for card in body["cards"])
+    # Preview must not write.
+    assert client.get("/api/flashcards").json() == []
+
+    chosen = body["cards"][:2]
+    saved = client.post("/api/flashcards/bulk", json={"noteId": note["id"], "cards": chosen})
+    assert saved.status_code == 201, saved.text
+    assert [card["front"] for card in saved.json()] == [card["front"] for card in chosen]
+    assert len(client.get("/api/flashcards").json()) == 2
+
+    # Saving the same drafts again is a no-op, not a duplicate deck.
+    again = client.post("/api/flashcards/bulk", json={"noteId": note["id"], "cards": chosen})
+    assert again.status_code == 201
+    assert again.json() == []
+    assert len(client.get("/api/flashcards").json()) == 2
+
+
+def test_generate_marks_existing_cards(client: TestClient, sign_in, make_user, db: DbSession) -> None:
+    sign_in(make_user(db))
+    note = _note(client, body="Entropy: a measure of disorder")
+    _card(client, note["id"], front="What is Entropy?")
+
+    preview = client.post("/api/flashcards/generate", json={"noteId": note["id"]}).json()
+    assert preview["cards"][0]["duplicate"] is True
+
+    saved = client.post("/api/flashcards/bulk", json={"noteId": note["id"], "cards": preview["cards"]})
+    assert saved.status_code == 201
+    assert saved.json() == []
+    assert len(client.get("/api/flashcards").json()) == 1
+
+
+def test_generate_scopes_to_the_caller(client: TestClient, sign_in, make_user, db: DbSession) -> None:
+    owner = make_user(db, email="ada@example.com")
+    other = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    note = _note(client, body="Entropy: a measure of disorder")
+
+    sign_in(other)
+    assert client.post("/api/flashcards/generate", json={"noteId": note["id"]}).status_code == 404
+    assert (
+        client.post(
+            "/api/flashcards/bulk",
+            json={"noteId": note["id"], "cards": [{"front": "Mine?", "back": "No."}]},
+        ).status_code
+        == 404
+    )
+
+
+def test_generate_validates_count_and_empty_note(
+    client: TestClient, sign_in, make_user, db: DbSession
+) -> None:
+    sign_in(make_user(db))
+    note = _note(client, body="Entropy")
+
+    assert client.post("/api/flashcards/generate", json={"noteId": note["id"], "count": 0}).status_code == 422
+    assert (
+        client.post("/api/flashcards/generate", json={"noteId": note["id"], "count": 31}).status_code == 422
+    )
+
+    empty = client.post("/api/flashcards/generate", json={"noteId": note["id"]}).json()
+    assert empty["cards"] == []
+
+
 def test_srs_schedule_math() -> None:
     now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
@@ -172,9 +249,7 @@ def test_review_notification_and_bootstrap(client: TestClient, sign_in, make_use
     assert [item for item in client.get("/api/notifications").json() if item["group"] == "review"] == []
 
 
-def test_mcp_flashcard_tools(
-    client: TestClient, mcp_env, mcp_key: str, sign_in
-) -> None:
+def test_mcp_flashcard_tools(client: TestClient, mcp_env, mcp_key: str, sign_in) -> None:
     from tests.test_mcp import _call, _payload
 
     sign_in(mcp_env)

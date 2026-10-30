@@ -26,9 +26,11 @@ import type {
   FilePresign,
   FileText,
   Flashcard,
+  FlashcardDraft,
   FlashcardGrade,
   FlashcardInput,
   FlashcardPatchInput,
+  GenerateCardsResponse,
   Group,
   GroupKind,
   GroupNoteInput,
@@ -180,6 +182,8 @@ interface StoreValue {
   dueCards: (now?: number) => Flashcard[];
   cardsForNote: (noteId: string) => Flashcard[];
   createCard: (input: FlashcardInput) => Promise<Flashcard>;
+  generateCards: (noteId: string, count?: number, refine?: boolean) => Promise<GenerateCardsResponse>;
+  createCards: (noteId: string, cards: FlashcardDraft[]) => Promise<Flashcard[]>;
   updateCard: (id: string, patch: FlashcardPatchInput) => Promise<Flashcard>;
   deleteCard: (id: string) => Promise<void>;
   gradeCard: (id: string, grade: FlashcardGrade) => Promise<Flashcard>;
@@ -1123,6 +1127,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const card = await apiPost<Flashcard>("/api/flashcards", input);
         replaceCard(card);
         return card;
+      },
+      generateCards: async (noteId, count = 10, refine = false) =>
+        apiPost<GenerateCardsResponse>("/api/flashcards/generate", { noteId, count, refine }),
+      createCards: async (noteId, cards) => {
+        const created = await apiPost<Flashcard[]>("/api/flashcards/bulk", { noteId, cards });
+        if (created.length) setFlashcards((current) => [...current, ...created]);
+        return created;
       },
       updateCard: async (id, patch) => {
         const current = flashcards.find((card) => card.id === id);

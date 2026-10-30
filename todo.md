@@ -154,6 +154,13 @@ One stop centre for studying:
       daily digest too.
 - [x] MCP tools: `list_due_cards`, `create_card`, `grade_card`.
 - [x] Tests: scheduling math, ownership, due filtering, MCP shapes.
+- [x] Generated cards (30 Oct 2026): `services/cardgen.py` turns definitions,
+      bullets, tables and cloze-worthy sentences (plus PDF highlights) into
+      drafts. `POST /api/flashcards/generate` previews them,
+      `POST /api/flashcards/bulk` saves the picked ones and skips duplicates.
+      The note page's Flashcards card gets a **Generate** modal with a
+      10/20/30 count, inline edits and the source quote for each draft. No key
+      required; AI refine is the next phase.
 
 ### 3.3 Progress & habit
 

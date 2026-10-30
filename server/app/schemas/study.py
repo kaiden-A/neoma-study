@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from ..models.enums import NoteType
 
 FlashcardGrade = Literal["again", "hard", "good", "easy"]
+FlashcardKind = Literal["basic", "cloze"]
 
 
 class FlashcardOut(BaseModel):
@@ -22,6 +23,41 @@ class FlashcardOut(BaseModel):
     suspended: bool
     createdAt: int
     updatedAt: int
+
+
+class FlashcardDraft(BaseModel):
+    """A card the client has not saved yet.
+
+    `source` is the note text the card came from and `duplicate` is computed
+    against the user's existing deck; neither is stored on the flashcard row.
+    """
+
+    front: str = Field(min_length=1, max_length=1000)
+    back: str = Field(default="", max_length=2000)
+    kind: FlashcardKind = "basic"
+    source: str = Field(default="", max_length=2000)
+    page: int | None = Field(default=None, ge=1)
+    duplicate: bool = False
+
+
+class GenerateCardsRequest(BaseModel):
+    noteId: str
+    count: int = Field(default=10, ge=1, le=30)
+    refine: bool = False
+
+
+class GenerateCardsResponse(BaseModel):
+    noteId: str
+    noteTitle: str
+    engine: Literal["rules", "ai"]
+    refined: bool
+    cards: list[FlashcardDraft]
+    notice: str | None = None
+
+
+class BulkCardsRequest(BaseModel):
+    noteId: str
+    cards: list[FlashcardDraft] = Field(min_length=1, max_length=50)
 
 
 class FlashcardCreate(BaseModel):

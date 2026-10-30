@@ -12,9 +12,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from ..models import Flashcard, Note, User
-from ..schemas.study import FlashcardCreate, FlashcardGrade, FlashcardOut, FlashcardPatch
+from ..schemas.notes import NoteStudy
+from ..schemas.study import (
+    BulkCardsRequest,
+    FlashcardCreate,
+    FlashcardDraft,
+    FlashcardGrade,
+    FlashcardOut,
+    FlashcardPatch,
+    GenerateCardsRequest,
+    GenerateCardsResponse,
+)
 from ..utils import to_ms
-from . import note_services, srs
+from . import cardgen, file_services, note_services, srs
 from .errors import InvalidError, NotFoundError
 
 MISSING_CARD = "That card is gone."
@@ -67,9 +77,7 @@ def list_cards(
         note = note_services.require_note(db, user, _note_uuid(note_id))
         statement = statement.where(Flashcard.note_id == note.id)
     if due_only:
-        statement = statement.where(
-            Flashcard.suspended.is_(False), Flashcard.due_at <= datetime.now(UTC)
-        )
+        statement = statement.where(Flashcard.suspended.is_(False), Flashcard.due_at <= datetime.now(UTC))
     statement = statement.order_by(Flashcard.due_at, Flashcard.created_at)
     if limit:
         statement = statement.limit(limit)
@@ -92,6 +100,89 @@ def create_card(db: DbSession, user: User, data: FlashcardCreate) -> FlashcardOu
     db.commit()
     db.refresh(card)
     return card_out(db, card)
+
+
+def _front_key(front: str) -> str:
+    return " ".join(front.lower().split())
+
+
+def _existing_fronts(db: DbSession, user: User, note_id: uuid.UUID) -> set[str]:
+    statement = select(Flashcard.front).where(Flashcard.owner_id == user.id, Flashcard.note_id == note_id)
+    return {_front_key(front) for front in db.scalars(statement)}
+
+
+def _file_text(db: DbSession, user: User, note: Note) -> str | None:
+    """The extracted text of the note's attachment, when the caller can see it."""
+    if note.file_id is None:
+        return None
+    file = file_services.require_visible_file(db, user, note.file_id)
+    return file.extracted_text or None
+
+
+def generate_cards(db: DbSession, user: User, data: GenerateCardsRequest) -> GenerateCardsResponse:
+    """Draft cards from the note (and its PDF/deck text); never writes rows."""
+    note = note_services.require_note(db, user, _note_uuid(data.noteId))
+    study = NoteStudy.model_validate(note.study or {})
+    highlights = [(item.page, item.quote) for item in study.highlights if item.quote.strip()]
+    drafts = cardgen.generate(
+        note.body or "",
+        file_text=_file_text(db, user, note),
+        highlights=highlights,
+        limit=data.count,
+    )
+    existing = _existing_fronts(db, user, note.id)
+    cards = [
+        FlashcardDraft(
+            front=draft.front,
+            back=draft.back,
+            kind=draft.kind,
+            source=draft.source,
+            page=draft.page,
+            duplicate=_front_key(draft.front) in existing,
+        )
+        for draft in drafts
+    ]
+    notice = None
+    if data.refine:
+        notice = "AI refine is not connected yet - these are the free rules-based cards."
+    return GenerateCardsResponse(
+        noteId=str(note.id),
+        noteTitle=note.title,
+        engine="rules",
+        refined=False,
+        cards=cards,
+        notice=notice,
+    )
+
+
+def create_cards(db: DbSession, user: User, data: BulkCardsRequest) -> list[FlashcardOut]:
+    """Save the previewed drafts in one commit, skipping duplicates."""
+    note = note_services.require_note(db, user, _note_uuid(data.noteId))
+    seen = _existing_fronts(db, user, note.id)
+    rows: list[Flashcard] = []
+    for draft in data.cards:
+        front = draft.front.strip()
+        if not front:
+            raise InvalidError("One of those cards had no question.")
+        key = _front_key(front)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            Flashcard(
+                owner_id=user.id,
+                note_id=note.id,
+                front=front[:1000],
+                back=draft.back.strip()[:2000],
+            )
+        )
+    if not rows:
+        return []
+    db.add_all(rows)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return [card_out(db, row) for row in rows]
 
 
 def update_card(db: DbSession, user: User, card_id: uuid.UUID, patch: FlashcardPatch) -> FlashcardOut:

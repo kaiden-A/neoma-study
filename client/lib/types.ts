@@ -467,6 +467,26 @@ export interface FlashcardPatchInput {
   suspended?: boolean;
 }
 
+export type FlashcardKind = "basic" | "cloze";
+
+export interface FlashcardDraft {
+  front: string;
+  back: string;
+  kind: FlashcardKind;
+  source: string;
+  page: number | null;
+  duplicate: boolean;
+}
+
+export interface GenerateCardsResponse {
+  noteId: string;
+  noteTitle: string;
+  engine: "rules" | "ai";
+  refined: boolean;
+  cards: FlashcardDraft[];
+  notice: string | null;
+}
+
 export interface StudySession {
   id: string;
   noteId: string | null;

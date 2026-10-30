@@ -6,7 +6,15 @@ from sqlalchemy.orm import Session as DbSession
 from ..database import get_db
 from ..dependencies import require_user
 from ..models import User
-from ..schemas.study import FlashcardCreate, FlashcardOut, FlashcardPatch, GradeRequest
+from ..schemas.study import (
+    BulkCardsRequest,
+    FlashcardCreate,
+    FlashcardOut,
+    FlashcardPatch,
+    GenerateCardsRequest,
+    GenerateCardsResponse,
+    GradeRequest,
+)
 from ..services import flashcard_services
 
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
@@ -21,6 +29,24 @@ def list_flashcards(
     db: DbSession = Depends(get_db),
 ) -> list[FlashcardOut]:
     return flashcard_services.list_cards(db, user, note_id=noteId, due_only=due, limit=limit)
+
+
+@router.post("/generate", response_model=GenerateCardsResponse)
+def generate_cards(
+    data: GenerateCardsRequest,
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+) -> GenerateCardsResponse:
+    return flashcard_services.generate_cards(db, user, data)
+
+
+@router.post("/bulk", response_model=list[FlashcardOut], status_code=201)
+def create_cards(
+    data: BulkCardsRequest,
+    user: User = Depends(require_user),
+    db: DbSession = Depends(get_db),
+) -> list[FlashcardOut]:
+    return flashcard_services.create_cards(db, user, data)
 
 
 @router.post("", response_model=FlashcardOut, status_code=201)
