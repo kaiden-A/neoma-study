@@ -1,12 +1,14 @@
-"""The Elpis refine pass: answer immutability, validation and fallbacks."""
+"""The Elpis refine pass and page context: ownership, fallbacks and shape."""
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.models import MoodleAnnouncement, MoodleAssignment, MoodleCourse
 from app.schemas.ai import ChatMessageIn
 from app.schemas.study import FlashcardDraft
 from app.services import ai_services
@@ -348,3 +350,132 @@ def test_chat_context_is_owner_scoped(
     )
 
     assert response.status_code == 404
+
+
+def _course(
+    db,
+    user,
+    *,
+    course_id: int = 777,
+    shortname: str = "BICS2301",
+    fullname: str = "Operating Systems",
+):
+    course = MoodleCourse(
+        user_id=user.id,
+        course_id=course_id,
+        shortname=shortname,
+        fullname=fullname,
+        progress=42,
+        outline=[
+            {
+                "name": "Week 5 — Process scheduling",
+                "modules": [
+                    {"name": "Slides", "modname": "resource"},
+                    {"name": "Recording", "modname": "url"},
+                ],
+            }
+        ],
+        grades=[{"name": "Quiz 1", "grade": "8", "max": "10", "percentage": "80%", "feedback": ""}],
+    )
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+    db.add(
+        MoodleAssignment(
+            user_id=user.id,
+            course_id=course.id,
+            assign_id=31,
+            cmid=310,
+            name="Quiz 3",
+            due_at=datetime.now(UTC) + timedelta(days=2),
+            submission_status="not submitted",
+        )
+    )
+    db.add(
+        MoodleAnnouncement(
+            user_id=user.id,
+            course_id=course.id,
+            discussion_id=410,
+            subject="Lab moved to Thursday",
+            author="Dr Aisyah",
+            posted_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+    return course
+
+
+def test_chat_endpoint_streams_course_context(
+    client: TestClient, sign_in, make_user, db, monkeypatch, fake_http
+) -> None:
+    user = make_user(db)
+    sign_in(user)
+    course = _course(db, user)
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id="agent_chat"))
+    fake_http.lines = ['data: {"choices":[{"delta":{"content":"Quiz 3 is next."}}]}']
+
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "messages": [{"role": "user", "content": "What is due?"}],
+            "context": {"courseId": str(course.id)},
+        },
+    )
+
+    assert response.status_code == 200
+    assert '"text": "Quiz 3 is next."' in response.text
+    system = fake_http.stream_calls[0]["json"]["messages"][0]["content"]
+    assert "BICS2301 — Operating Systems" in system
+    assert "Progress: 42%" in system
+    assert "Quiz 3" in system
+    assert "Lab moved to Thursday" in system
+    assert "Week 5 — Process scheduling" in system
+    assert "Slides" in system
+
+
+def test_course_context_is_owner_scoped(
+    client: TestClient, sign_in, make_user, db, monkeypatch, fake_http
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    other = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    course = _course(db, owner)
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id="agent_chat"))
+
+    sign_in(other)
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "messages": [{"role": "user", "content": "What is due?"}],
+            "context": {"courseId": str(course.id)},
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_courses_scope_lists_only_the_callers_courses(
+    client: TestClient, sign_in, make_user, db, monkeypatch, fake_http
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    other = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    _course(db, owner, course_id=101, shortname="OWN101", fullname="Own Course")
+    _course(db, other, course_id=202, shortname="OTHER202", fullname="Other Course")
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id="agent_chat"))
+    fake_http.lines = ['data: {"choices":[{"delta":{"content":"OK"}}]}']
+
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "messages": [{"role": "user", "content": "What needs attention?"}],
+            "context": {"scope": "courses"},
+        },
+    )
+
+    assert response.status_code == 200
+    system = fake_http.stream_calls[0]["json"]["messages"][0]["content"]
+    assert "OWN101 — Own Course" in system
+    assert "OTHER202" not in system
+    assert "Unread announcements:" in system
+    assert "Lab moved to Thursday" in system

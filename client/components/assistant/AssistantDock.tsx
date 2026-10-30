@@ -13,7 +13,7 @@ export function AssistantDock() {
     messages,
     busy,
     error,
-    noteTitle,
+    context,
     send,
     stop,
     clear,
@@ -41,9 +41,22 @@ export function AssistantDock() {
 
   if (!open) return null;
 
-  const prompts = noteTitle
-    ? ["Explain this note", "Summarise it", "Make 5 questions from it"]
-    : [];
+  const prompts =
+    context?.kind === "note"
+      ? ["Explain this note", "Summarise it", "Make 5 questions from it"]
+      : context?.kind === "course"
+        ? ["What's due next?", "Summarise this course", "What did I miss?"]
+        : context?.kind === "courses"
+          ? ["What needs attention this week?", "Which course needs the most work?"]
+          : [];
+  const placeholder =
+    context?.kind === "note"
+      ? "Ask about this note…"
+      : context?.kind === "course"
+        ? "Ask about this course…"
+        : context?.kind === "courses"
+          ? "Ask about your courses…"
+          : "Ask Elpis…";
 
   function submit() {
     const text = draft.trim();
@@ -95,11 +108,20 @@ export function AssistantDock() {
           </div>
         </header>
 
-        {noteTitle ? (
+        {context ? (
           <div className="nm-assistant-context">
             <span className="nm-chip nm-chip--sm nm-chip--link">
-              <i className="fa-solid fa-note-sticky" aria-hidden="true" />
-              <span className="nm-chip-name">{noteTitle}</span>
+              <i
+                className={`fa-solid ${
+                  context.kind === "note"
+                    ? "fa-note-sticky"
+                    : context.kind === "course"
+                      ? "fa-book-open"
+                      : "fa-book-bookmark"
+                }`}
+                aria-hidden="true"
+              />
+              <span className="nm-chip-name">{context.label}</span>
             </span>
           </div>
         ) : null}
@@ -108,7 +130,7 @@ export function AssistantDock() {
           {messages.length === 0 ? (
             <div className="nm-assistant-empty">
               <p className="nm-assistant-lead">
-                Ask about the note you are reading, or paste something you want explained.
+                Ask about the page you are on, or paste something you want explained.
               </p>
               {prompts.length ? (
                 <div className="nm-assistant-suggest">
@@ -125,7 +147,7 @@ export function AssistantDock() {
                   ))}
                 </div>
               ) : (
-                <p className="nm-help">Open a note first to give Elpis something to read.</p>
+                <p className="nm-help">Open a note or a course first to give Elpis something to read.</p>
               )}
             </div>
           ) : (
@@ -162,7 +184,7 @@ export function AssistantDock() {
             ref={inputRef}
             className="nm-assistant-input"
             rows={1}
-            placeholder={noteTitle ? "Ask about this note…" : "Ask Elpis…"}
+            placeholder={placeholder}
             aria-label="Message Elpis"
             value={draft}
             onChange={(event) => {

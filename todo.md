@@ -173,6 +173,11 @@ One stop centre for studying:
       proxies Elpis SSE into `{"text"}` frames. The thread lives in
       sessionStorage, is read-only, and hidden until `LIBRECHAT_CHAT_AGENT_ID`
       is configured.
+- [x] Page-aware dock (30 Oct 2026): `/courses/<id>` sends the cached course
+      code/name, progress, deadlines, assignments, grades, announcements and
+      outline; `/courses` and `/courses/announcements` send the course-list
+      summary. No Moodle request is made during chat and every course is
+      owner-checked. The context chip and quick prompts follow the page.
 - [x] Quiz cards (30 Oct 2026): migration `94d323a0d272` adds `kind`,
       `options` and `answer_index`. The Generate modal gets a **Multiple
       choice** toggle; without Elpis it fills wrong options from the other

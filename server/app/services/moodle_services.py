@@ -1887,6 +1887,11 @@ def _grades(course: MoodleCourse) -> list[GradeOut]:
     return output
 
 
+def cached_grades(course: MoodleCourse) -> list[GradeOut]:
+    """The mirrored grade rows, without a Moodle request."""
+    return _grades(course)
+
+
 def assignments_for(db: DbSession, user: User, course: MoodleCourse) -> list[AssignmentOut]:
     rows = db.scalars(
         select(MoodleAssignment)

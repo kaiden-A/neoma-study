@@ -12,6 +12,12 @@ export interface AssistantMessage {
   content: string;
 }
 
+export interface AssistantContext {
+  kind: "note" | "course" | "courses";
+  id: string | null;
+  label: string;
+}
+
 interface AssistantValue {
   open: boolean;
   openAssistant: () => void;
@@ -19,8 +25,7 @@ interface AssistantValue {
   messages: AssistantMessage[];
   busy: boolean;
   error: string | null;
-  noteId: string | null;
-  noteTitle: string | null;
+  context: AssistantContext | null;
   send: (text: string) => Promise<void>;
   stop: () => void;
   clear: () => void;
@@ -71,8 +76,25 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
 
   const match = pathname.match(/^\/vault\/([0-9a-f-]{36})$/i);
   const noteId = match?.[1] ?? null;
+  const courseMatch = pathname.match(/^\/courses\/([0-9a-f-]{36})$/i);
+  const courseId = courseMatch?.[1] ?? null;
   const note = noteId ? store.noteById(noteId) : null;
-  const noteTitle = note?.title ?? null;
+  const course = courseId ? store.courseById(courseId) : null;
+  const isCoursesHome = pathname === "/courses" || pathname === "/courses/announcements";
+  const courseLabel = course
+    ? [course.shortname, course.fullname].filter(Boolean).join(" — ") || "This course"
+    : "This course";
+  const context = useMemo<AssistantContext | null>(
+    () =>
+      courseId
+        ? { kind: "course", id: courseId, label: courseLabel }
+        : noteId
+          ? { kind: "note", id: noteId, label: note?.title ?? "This note" }
+          : isCoursesHome
+            ? { kind: "courses", id: null, label: "Your courses" }
+            : null,
+    [courseId, courseLabel, isCoursesHome, noteId, note?.title],
+  );
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -118,7 +140,14 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: history.slice(-20).map(({ role, content }) => ({ role, content })),
-            context: noteId ? { noteId } : null,
+            context:
+              context?.kind === "note"
+                ? { noteId: context.id }
+                : context?.kind === "course"
+                  ? { courseId: context.id }
+                  : context?.kind === "courses"
+                    ? { scope: "courses" }
+                    : null,
           }),
           signal: controller.signal,
         });
@@ -191,7 +220,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
         abortRef.current = null;
       }
     },
-    [busy, messages, noteId],
+    [busy, context, messages],
   );
 
   const value = useMemo<AssistantValue>(
@@ -202,8 +231,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
       messages,
       busy,
       error,
-      noteId,
-      noteTitle,
+      context,
       send,
       stop,
       clear,
@@ -215,8 +243,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
       messages,
       busy,
       error,
-      noteId,
-      noteTitle,
+      context,
       send,
       stop,
       clear,

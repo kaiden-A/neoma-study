@@ -22,6 +22,8 @@ class ChatMessageIn(BaseModel):
 
 class ChatContextIn(BaseModel):
     noteId: str | None = None
+    courseId: str | None = None
+    scope: Literal["courses"] | None = None
 
 
 class ChatRequest(BaseModel):

@@ -91,6 +91,22 @@ that the user can use the Generate button on a note instead.
 The dock never appears until this agent is configured (`ai.chat` in
 `/api/bootstrap`).
 
+### What the dock knows
+
+The dock is page-aware, not browser-aware. Neoma sends one context block with
+the question:
+
+| Page | Context |
+| --- | --- |
+| `/vault/<id>` | Note title/tags, up to 8k of body, extracted file text, 8 highlights |
+| `/courses/<id>` | Course code/name, progress, open deadlines, up to 8 assignments, cached grades, 5 announcements, cached outline |
+| `/courses`, `/courses/announcements` | Your courses with open deadlines, next due and unread counts |
+
+It is the **cached iTa'leem mirror**; no Moodle request is made while chatting.
+If the course has not synced, the block says so. Ownership is checked server-side
+on every request. The assistant still cannot see the exact tab, scroll position
+or anything outside that block.
+
 ## 4. Create an API key
 
 **Settings → Data & Privacy → Agent API Keys → Manage → Create API Key.** The
