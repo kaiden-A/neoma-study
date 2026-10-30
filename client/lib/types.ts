@@ -406,6 +406,13 @@ export interface Bootstrap {
   notifications?: NotificationItem[];
   flashcards?: Flashcard[];
   study?: StudyOverview;
+  ai?: AiStatus;
+}
+
+export interface AiStatus {
+  configured: boolean;
+  refine: boolean;
+  chat: boolean;
 }
 
 export interface FileOut {
@@ -476,6 +483,7 @@ export interface FlashcardDraft {
   source: string;
   page: number | null;
   duplicate: boolean;
+  distractors: string[];
 }
 
 export interface GenerateCardsResponse {

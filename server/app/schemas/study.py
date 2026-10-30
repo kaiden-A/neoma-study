@@ -38,6 +38,9 @@ class FlashcardDraft(BaseModel):
     source: str = Field(default="", max_length=2000)
     page: int | None = Field(default=None, ge=1)
     duplicate: bool = False
+    # Wrong options proposed by the AI refine pass; the answer itself is never
+    # model-written. Empty until quiz cards land.
+    distractors: list[str] = Field(default_factory=list, max_length=3)
 
 
 class GenerateCardsRequest(BaseModel):

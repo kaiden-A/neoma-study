@@ -12,6 +12,7 @@ import type {
   Announcement,
   AnnouncementReadResponse,
   AnnouncementsResponse,
+  AiStatus,
   AnswerInput,
   Bootstrap,
   CalendarEvent,
@@ -143,6 +144,7 @@ interface StoreValue {
   notifications: NotificationItem[];
   flashcards: Flashcard[];
   study: StudyOverview | null;
+  aiStatus: AiStatus | null;
   refresh: () => Promise<void>;
   updateSettings: (patch: UserSettingsPatch) => Promise<UserSettings>;
   groupById: (id: string) => Group | null;
@@ -335,6 +337,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [study, setStudy] = useState<StudyOverview | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
   const { toast } = useOverlays();
   // Optimistic bookkeeping: `stable` is the last server-confirmed row (the
@@ -379,6 +382,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setNotifications(data.notifications ?? []);
     setFlashcards(data.flashcards ?? []);
     setStudy(data.study ?? null);
+    setAiStatus(data.ai ?? null);
     booted.current = true;
     setStatus("ready");
   }, []);
@@ -667,6 +671,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       notifications,
       flashcards,
       study,
+      aiStatus,
       refresh,
       retry,
       status,
@@ -1339,6 +1344,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     notifications,
     flashcards,
     study,
+    aiStatus,
     refresh,
     retry,
     replaceGroup,

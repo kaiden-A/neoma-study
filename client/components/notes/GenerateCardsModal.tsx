@@ -21,6 +21,7 @@ export function GenerateCardsModal({
   const store = useStore();
   const { toast } = useOverlays();
   const [count, setCount] = useState<number>(10);
+  const [refine, setRefine] = useState(true);
   const [result, setResult] = useState<GenerateCardsResponse | null>(null);
   const [drafts, setDrafts] = useState<FlashcardDraft[]>([]);
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -32,12 +33,13 @@ export function GenerateCardsModal({
   const allPicked = selectable.length > 0 && selectable.every((index) => picked.has(index));
   const chosen = drafts.filter((_, index) => picked.has(index));
   const ready = chosen.length > 0 && chosen.every((draft) => draft.front.trim());
+  const aiReady = Boolean(store.aiStatus?.refine);
 
   async function generate() {
     setBusy(true);
     setError(null);
     try {
-      const response = await store.generateCards(noteId, count);
+      const response = await store.generateCards(noteId, count, refine && aiReady);
       setResult(response);
       setDrafts(response.cards);
       setPicked(new Set(response.cards.flatMap((card, index) => (card.duplicate ? [] : [index]))));
@@ -153,13 +155,25 @@ export function GenerateCardsModal({
           ))}
         </div>
         {result ? <span className="nm-meta">{drafts.length} drafts</span> : null}
+        {aiReady ? (
+          <label className="nm-check nm-check--switch">
+            <input
+              type="checkbox"
+              checked={refine}
+              disabled={busy || saving}
+              onChange={(event) => setRefine(event.target.checked)}
+            />
+            <span>Refine with Elpis</span>
+          </label>
+        ) : null}
       </div>
 
       {error ? <p className="nm-error">{error}</p> : null}
 
       {busy ? (
         <p className="nm-help" role="status">
-          <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" /> Reading the note…
+          <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />{" "}
+          {refine && aiReady ? "Elpis is improving the cards…" : "Reading the note…"}
         </p>
       ) : null}
 
@@ -184,6 +198,12 @@ export function GenerateCardsModal({
                 <span className="nm-meta">
                   {selectable.length} new · {drafts.length - selectable.length} already in your deck
                 </span>
+                {result.refined ? (
+                  <span className="nm-chip nm-chip--sm nm-chip--link">
+                    <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+                    Elpis
+                  </span>
+                ) : null}
                 <div className="nm-spacer" />
                 <button
                   type="button"

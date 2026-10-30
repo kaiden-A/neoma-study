@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session as DbSession
 from ..database import get_db
 from ..dependencies import require_user
 from ..models import Subject, User
+from ..schemas.ai import AiStatusOut
 from ..schemas.events import EventOut
 from ..schemas.groups import GroupOut
 from ..schemas.moodle import CourseOut
@@ -24,6 +25,7 @@ from ..schemas.subjects import SubjectOut
 from ..schemas.tasks import TaskOut
 from ..schemas.users import PublicUser
 from ..services import (
+    ai_services,
     auth_services,
     event_services,
     flashcard_services,
@@ -51,6 +53,7 @@ class BootstrapOut(BaseModel):
     notifications: list[NotificationOut]
     flashcards: list[FlashcardOut]
     study: StudyOverview
+    ai: AiStatusOut
 
 
 @router.get("", response_model=BootstrapOut)
@@ -72,4 +75,5 @@ def bootstrap(user: User = Depends(require_user), db: DbSession = Depends(get_db
         notifications=notification_services.derive(db, user),
         flashcards=flashcard_services.list_cards(db, user),
         study=study_services.overview(db, user),
+        ai=ai_services.status(),
     )

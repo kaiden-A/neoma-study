@@ -12,6 +12,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from . import mcp_italeem, mcp_server, mcp_tools  # noqa: F401  (the modules register tools)
 from .config import get_settings
 from .routers import (
+    ai_router,
     auth_router,
     bootstrap_router,
     data_router,
@@ -118,6 +119,7 @@ app.include_router(notes_router.router)
 app.include_router(shares_router.router)
 app.include_router(links_router.router)
 app.include_router(flashcards_router.router)
+app.include_router(ai_router.router)
 app.include_router(study_router.router)
 app.include_router(subjects_router.router)
 app.include_router(files_router.router)

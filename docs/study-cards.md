@@ -46,9 +46,17 @@ letters. Results are deduped by question and by source, then ranked
   line-shaped and joining produces worse cards.
 - No math/LaTeX cloze; those lines are left alone.
 
-## AI refine (next phase)
+## AI refine (optional)
 
-The draft schema already carries `source` and `page` so an Elpis Agents API
-pass can improve the question and add MCQ distractors **without ever changing
-the answer**. The server will re-validate every returned `source` against the
-note before showing it, and fall back to the rules drafts on any failure.
+The draft schema carries `source`, `page` and `distractors` so an Elpis
+Agents API pass can improve the question and add quiz distractors **without
+ever changing the answer**. The server re-validates every returned question:
+
+- cloze cards must still contain exactly one `___`;
+- basic-card questions must not contain the answer;
+- distractors are de-duplicated, never equal the answer, and cap at three;
+- a failed call, a timeout, malformed JSON or an unknown index falls back to
+  the rules drafts with `refined: false`.
+
+The client only shows the "Refine with Elpis" toggle when
+`/api/bootstrap` reports `ai.refine`. Setup lives in `docs/elpis.md`.

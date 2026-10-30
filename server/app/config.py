@@ -69,6 +69,23 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/api/google/callback"
 
+    # Elpis (our LibreChat deployment) exposes an OpenAI-compatible Agents API
+    # at {base}/chat/completions. Empty values disable AI; the free rules
+    # generator keeps working. The base URL ends at /api/agents/v1.
+    librechat_base_url: str = ""
+    librechat_api_key: str = ""
+    librechat_refine_agent_id: str = ""
+    librechat_chat_agent_id: str = ""
+    librechat_timeout_seconds: float = 25.0
+
+    @property
+    def ai_refine_configured(self) -> bool:
+        return bool(self.librechat_base_url and self.librechat_api_key and self.librechat_refine_agent_id)
+
+    @property
+    def ai_chat_configured(self) -> bool:
+        return bool(self.librechat_base_url and self.librechat_api_key and self.librechat_chat_agent_id)
+
     @property
     def google_configured(self) -> bool:
         return bool(self.google_client_id and self.google_client_secret)

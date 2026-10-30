@@ -24,7 +24,7 @@ from ..schemas.study import (
     GenerateCardsResponse,
 )
 from ..utils import to_ms
-from . import cardgen, file_services, note_services, srs
+from . import ai_services, cardgen, file_services, note_services, srs
 from .errors import InvalidError, NotFoundError
 
 MISSING_CARD = "That card is gone."
@@ -138,18 +138,27 @@ def generate_cards(db: DbSession, user: User, data: GenerateCardsRequest) -> Gen
             kind=draft.kind,
             source=draft.source,
             page=draft.page,
-            duplicate=_front_key(draft.front) in existing,
         )
         for draft in drafts
     ]
-    notice = None
+    refined = False
+    configured = False
     if data.refine:
-        notice = "AI refine is not connected yet - these are the free rules-based cards."
+        outcome = ai_services.refine_cards(cards, note_title=note.title)
+        cards, refined, configured = outcome.cards, outcome.refined, outcome.configured
+    cards = [card.model_copy(update={"duplicate": _front_key(card.front) in existing}) for card in cards]
+    notice = None
+    if data.refine and not refined:
+        notice = (
+            "Elpis did not answer; these are the free rules-based cards."
+            if configured
+            else "Elpis is not connected; these are the free rules-based cards."
+        )
     return GenerateCardsResponse(
         noteId=str(note.id),
         noteTitle=note.title,
-        engine="rules",
-        refined=False,
+        engine="ai" if refined else "rules",
+        refined=refined,
         cards=cards,
         notice=notice,
     )

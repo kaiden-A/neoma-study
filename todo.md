@@ -161,6 +161,12 @@ One stop centre for studying:
       The note page's Flashcards card gets a **Generate** modal with a
       10/20/30 count, inline edits and the source quote for each draft. No key
       required; AI refine is the next phase.
+- [x] Elpis refine (30 Oct 2026): `services/ai_services.py` calls the
+      OpenAI-compatible Agents API, `GET /api/ai/status` + the bootstrap `ai`
+      flag drive the "Refine with Elpis" toggle. The model may only rewrite the
+      question and add distractors; the answer is immutable and every failure
+      falls back to the rules drafts. Needs `LIBRECHAT_*` in the environment
+      and the tool-free study-card agent; setup in `docs/elpis.md`.
 
 ### 3.3 Progress & habit
 
@@ -185,6 +191,10 @@ One stop centre for studying:
 - [ ] OCR for handwriting — later, separate project (tesseract or an API).
 
 ### 3.5 AI — LibreChat inside Neoma (skipped this pass, per request)
+
+> 30 Oct 2026: the card refine shipped as a narrow slice of this section
+> (`docs/elpis.md`). The chat panel and tool-backed actions below are still
+> open; the assistant dock plan reuses the same `ai_services.py` seam.
 
 - [x] Findings (verified in LibreChat docs): they ship an **Agents API** —
       `POST /api/agents/v1/chat/completions` (OpenAI-compatible, API-key auth,
