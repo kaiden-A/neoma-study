@@ -14,6 +14,7 @@ import { QuickCapture } from "@/components/QuickCapture";
 import { Avatar } from "@/components/ui/bits";
 import { Menu } from "@/components/ui/Menu";
 import { apiPost } from "@/lib/api-client";
+import { useAssistant } from "@/lib/assistant";
 import { useStore } from "@/lib/store";
 import { applyTheme } from "@/lib/theme";
 import type { LogoutResponse } from "@/lib/types";
@@ -33,7 +34,8 @@ const TABS = [...NAV, { href: "/settings", label: "Settings", icon: "fa-sliders"
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, settings, status, bootSlow, updateSettings, unreadCount, dueCards } = useStore();
+  const { user, settings, status, bootSlow, updateSettings, unreadCount, dueCards, aiStatus } = useStore();
+  const assistant = useAssistant();
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -73,6 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const planner = pathname === "/today" || pathname === "/calendar";
   const unread = unreadCount();
   const due = dueCards(now).length;
+  const canChat = Boolean(aiStatus?.chat);
   const bellLabel = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
 
   return (
@@ -109,6 +112,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="nm-rail-bottom">
+            {canChat ? (
+              <button
+                type="button"
+                className="nm-navitem nm-navitem--sm nm-navitem--button"
+                onClick={assistant.openAssistant}
+              >
+                <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+                <span>Elpis</span>
+              </button>
+            ) : null}
             <Link
               className={`nm-navitem nm-navitem--sm${isActive("/settings") ? " is-active" : ""}`}
               href="/settings"
@@ -149,6 +162,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <kbd className="nm-kbd">Ctrl K</kbd>
             </button>
             <div className="flex items-center gap-1.5">
+              {canChat ? (
+                <button
+                  type="button"
+                  className="nm-iconbtn"
+                  aria-label="Open Elpis assistant"
+                  onClick={assistant.openAssistant}
+                >
+                  <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="nm-iconbtn"

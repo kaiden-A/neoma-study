@@ -167,6 +167,12 @@ One stop centre for studying:
       question and add distractors; the answer is immutable and every failure
       falls back to the rules drafts. Needs `LIBRECHAT_*` in the environment
       and the tool-free study-card agent; setup in `docs/elpis.md`.
+- [x] Assistant dock (30 Oct 2026): global right drawer on desktop, bottom
+      sheet on mobile, opened from the rail/topbar. On a note page the server
+      attaches the body, extracted PDF text and highlights; `POST /api/ai/chat`
+      proxies Elpis SSE into `{"text"}` frames. The thread lives in
+      sessionStorage, is read-only, and hidden until `LIBRECHAT_CHAT_AGENT_ID`
+      is configured.
 
 ### 3.3 Progress & habit
 
@@ -192,9 +198,9 @@ One stop centre for studying:
 
 ### 3.5 AI — LibreChat inside Neoma (skipped this pass, per request)
 
-> 30 Oct 2026: the card refine shipped as a narrow slice of this section
-> (`docs/elpis.md`). The chat panel and tool-backed actions below are still
-> open; the assistant dock plan reuses the same `ai_services.py` seam.
+> 30 Oct 2026: the card refine and the read-only assistant dock shipped as a
+> narrow slice of this section (`docs/elpis.md`). Tool-backed actions and a
+> persisted thread below are still open.
 
 - [x] Findings (verified in LibreChat docs): they ship an **Agents API** —
       `POST /api/agents/v1/chat/completions` (OpenAI-compatible, API-key auth,

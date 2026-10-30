@@ -2,10 +2,12 @@
 
 import json
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.schemas.ai import ChatMessageIn
 from app.schemas.study import FlashcardDraft
 from app.services import ai_services
 
@@ -35,10 +37,28 @@ class FakeResponse:
         return self._payload
 
 
+class FakeStream:
+    status_code: int = 200
+
+    def __init__(self, lines: list[str]) -> None:
+        self._lines = lines
+
+    def __enter__(self) -> "FakeStream":
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+    def iter_lines(self):
+        return iter(self._lines)
+
+
 class FakeClient:
     payload: object = {}
     error: Exception | None = None
     calls: list[dict] = []
+    lines: list[str] = []
+    stream_calls: list[dict] = []
 
     def __init__(self, *args, **kwargs) -> None:
         del args
@@ -56,12 +76,22 @@ class FakeClient:
             raise FakeClient.error
         return FakeResponse(FakeClient.payload)
 
+    def stream(self, method: str, url: str, json: dict | None = None, headers: dict | None = None):
+        FakeClient.stream_calls.append(
+            {"method": method, "url": url, "json": json or {}, "headers": headers or {}}
+        )
+        if FakeClient.error is not None:
+            raise FakeClient.error
+        return FakeStream(FakeClient.lines)
+
 
 @pytest.fixture
 def fake_http(monkeypatch) -> type[FakeClient]:
     FakeClient.payload = {}
     FakeClient.error = None
     FakeClient.calls = []
+    FakeClient.lines = []
+    FakeClient.stream_calls = []
     monkeypatch.setattr(ai_services.httpx, "Client", FakeClient)
     return FakeClient
 
@@ -224,3 +254,94 @@ def test_generate_refine_wiring(client: TestClient, sign_in, make_user, db, monk
     assert body["cards"][0]["front"] == "In your own words, what is entropy?"
     assert body["cards"][0]["back"] == "a state function."
     assert len(body["cards"][0]["distractors"]) == 3
+
+
+def test_chat_stream_normalizes_chunks(monkeypatch, fake_http) -> None:
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id="agent_chat"))
+    fake_http.lines = [
+        'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+        "",
+        'data: {"choices":[{"delta":{"content":"lo"}}]}',
+        "data: [DONE]",
+    ]
+
+    frames = list(
+        ai_services.chat_stream([ChatMessageIn(role="user", content="hi")], context="Title: Thermo")
+    )
+
+    assert 'data: {"text": "Hel"}\n\n' in frames
+    assert 'data: {"text": "lo"}\n\n' in frames
+    assert frames[-1] == 'data: {"done": true}\n\n'
+    call = fake_http.stream_calls[0]
+    assert call["url"] == "https://elpis.test/api/agents/v1/chat/completions"
+    assert call["json"]["model"] == "agent_chat"
+    assert "Title: Thermo" in call["json"]["messages"][0]["content"]
+
+
+def test_chat_stream_upstream_error_is_an_event(monkeypatch, fake_http) -> None:
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id="agent_chat"))
+    fake_http.error = httpx.ConnectError("down")
+
+    frames = list(ai_services.chat_stream([ChatMessageIn(role="user", content="hi")]))
+
+    assert any('"error"' in frame for frame in frames)
+
+
+def test_chat_endpoint_unconfigured(client: TestClient, sign_in, make_user, db, monkeypatch) -> None:
+    sign_in(make_user(db))
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id=""))
+
+    response = client.post("/api/ai/chat", json={"messages": [{"role": "user", "content": "hi"}]})
+
+    assert response.status_code == 503
+    assert response.json() == {"error": "The assistant is not connected yet."}
+
+
+def test_chat_endpoint_streams_note_context(
+    client: TestClient, sign_in, make_user, db, monkeypatch, fake_http
+) -> None:
+    sign_in(make_user(db))
+    note = client.post(
+        "/api/notes",
+        json={"type": "note", "title": "Thermo", "body": "Entropy is a state function."},
+    ).json()
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id="agent_chat"))
+    fake_http.lines = ['data: {"choices":[{"delta":{"content":"It is a state function."}}]}']
+
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "messages": [{"role": "user", "content": "What is entropy?"}],
+            "context": {"noteId": note["id"]},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"text": "It is a state function."' in response.text
+    system = fake_http.stream_calls[0]["json"]["messages"][0]["content"]
+    assert "Entropy is a state function." in system
+
+
+def test_chat_context_is_owner_scoped(
+    client: TestClient, sign_in, make_user, db, monkeypatch, fake_http
+) -> None:
+    owner = make_user(db, email="ada@example.com")
+    other = make_user(db, email="eve@example.com")
+    sign_in(owner)
+    note = client.post(
+        "/api/notes",
+        json={"type": "note", "title": "Private", "body": "Entropy is a state function."},
+    ).json()
+    monkeypatch.setattr(ai_services, "get_settings", lambda: _settings(librechat_chat_agent_id="agent_chat"))
+
+    sign_in(other)
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "messages": [{"role": "user", "content": "What is entropy?"}],
+            "context": {"noteId": note["id"]},
+        },
+    )
+
+    assert response.status_code == 404
