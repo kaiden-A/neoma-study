@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useState } from "react";
+import type { JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
@@ -14,7 +15,11 @@ import { SlashCommand } from "@/components/notes/slashCommand";
 
 export interface RichTextEditorHandle {
   insertMarkdown: (markdown: string) => void;
+  /** Inserts a durable image (handwriting) plus an optional caption at the
+   * caret, or at the document end when the editor was never focused. */
+  insertImage: (src: string, alt: string, caption: string, at?: "cursor" | "end") => void;
   focus: () => void;
+  isFocused: () => boolean;
 }
 
 interface RichTextEditorProps {
@@ -196,7 +201,18 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
       insertMarkdown: (markdown: string) => {
         editor?.chain().focus().insertContent(markdown, { contentType: "markdown" }).run();
       },
+      insertImage: (src: string, alt: string, caption: string, at: "cursor" | "end" = "cursor") => {
+        if (!editor) return;
+        const content: JSONContent[] = [{ type: "image", attrs: { src, alt } }];
+        if (caption) content.push({ type: "paragraph", content: [{ type: "text", text: caption }] });
+        // Keep a paragraph below the picture so the cursor does not sit on the
+        // image node and the next insert replaces it.
+        content.push({ type: "paragraph" });
+        const chain = at === "end" ? editor.chain().focus("end") : editor.chain().focus();
+        chain.insertContent(content).run();
+      },
       focus: () => editor?.commands.focus(),
+      isFocused: () => editor?.isFocused ?? false,
     }),
     [editor],
   );

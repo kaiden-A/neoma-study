@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { FilePreview } from "@/components/notes/FilePreview";
 import { GenerateCardsModal } from "@/components/notes/GenerateCardsModal";
+import { HandwritingSheet } from "@/components/notes/HandwritingSheet";
 import { LinkPreview } from "@/components/notes/LinkPreview";
 import { useNoteActions } from "@/components/notes/NoteActions";
 import { NoteDetailsSheet } from "@/components/notes/NoteDetailsSheet";
@@ -71,6 +72,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [penOpen, setPenOpen] = useState(false);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileMissing, setFileMissing] = useState(false);
@@ -87,6 +89,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const loaded = useRef(false);
   const studyRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichTextEditorHandle>(null);
+  const inkAtCaret = useRef(false);
   const videoTimeRef = useRef(0);
   const positionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekCounter = useRef(0);
@@ -172,6 +175,32 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const handleVideoTime = useCallback((seconds: number) => {
     videoTimeRef.current = seconds;
   }, []);
+
+  // Handwriting is a raster page in the note body, so it rides the same R2
+  // upload path as a pasted picture. The caption is typed text and keeps the
+  // page findable through normal note search. Errors bubble to the sheet so the
+  // reason is visible there instead of in a toast behind the modal.
+  const insertInk = useCallback(
+    async (blob: Blob, caption: string): Promise<void> => {
+      if (!note) throw new Error("That note is no longer open.");
+      const editor = editorRef.current;
+      if (!editor) throw new Error("The note editor is not ready.");
+      const uploaded = await store.uploadFile(blob, "handwriting.png", null, note.groupId ?? null);
+      editor.insertImage(
+        `/api/files/${uploaded.id}/raw`,
+        "Handwriting",
+        caption.trim(),
+        inkAtCaret.current ? "cursor" : "end",
+      );
+      setPenOpen(false);
+      toast("Handwriting added", {
+        kind: "success",
+        icon: "fa-pen-nib",
+        body: "Press Save changes to keep it in the note.",
+      });
+    },
+    [note, store, toast],
+  );
 
   useEffect(() => {
     return () => {
@@ -652,6 +681,21 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             Stamp current time
           </button>
         ) : null}
+        <button
+          type="button"
+          className="nm-btn nm-btn--ghost nm-btn--sm"
+          title="Write with a pen"
+          aria-label="Write with a pen"
+          onPointerDown={() => {
+            // Capture focus before the button takes it: the page goes where the
+            // caret was, or at the end of the note when it was never placed.
+            inkAtCaret.current = editorRef.current?.isFocused() ?? false;
+          }}
+          onClick={() => setPenOpen(true)}
+        >
+          <i className="fa-solid fa-pen-nib" aria-hidden="true" />
+          <span className="nm-btn-label">Write by pen</span>
+        </button>
         <div className="nm-spacer" />
         <span className="nm-mono nm-writer-count">
           {words} word{words === 1 ? "" : "s"}
@@ -985,6 +1029,10 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             />
           </Field>
         </Modal>
+      ) : null}
+
+      {penOpen ? (
+        <HandwritingSheet onClose={() => setPenOpen(false)} onInsert={insertInk} />
       ) : null}
 
       {generateOpen ? (

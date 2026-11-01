@@ -10,14 +10,18 @@ export function Modal({
   children,
   footer,
   dismissible = true,
+  autoFocus = true,
 }: {
   title: string;
   subtitle?: string;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "ink";
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
   dismissible?: boolean;
+  /** Off for surfaces where autofocusing a field would open the on-screen
+   * keyboard (the handwriting sheet). */
+  autoFocus?: boolean;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -25,15 +29,17 @@ export function Modal({
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     document.body.classList.add("has-overlay");
-    const target =
-      modalRef.current?.querySelector<HTMLElement>("input, textarea, select") ??
-      modalRef.current?.querySelector<HTMLElement>("button:not([disabled]), [href]");
-    target?.focus();
+    if (autoFocus) {
+      const target =
+        modalRef.current?.querySelector<HTMLElement>("input, textarea, select") ??
+        modalRef.current?.querySelector<HTMLElement>("button:not([disabled]), [href]");
+      target?.focus();
+    }
     return () => {
       document.body.classList.remove("has-overlay");
       previous?.focus?.();
     };
-  }, []);
+  }, [autoFocus]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

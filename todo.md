@@ -40,6 +40,11 @@ One stop centre for studying:
 - [x] Explicit save — dirty tracking over title/body/tags/subject, Save button
       (header on desktop, bottom bar on mobile), Ctrl/Cmd+S, leave guard
       (Cancel / Discard / Save & leave) + `beforeunload`. Autosave removed.
+- [x] Handwriting sheet `HandwritingSheet.tsx` + `lib/ink.ts` — pen,
+      highlighter and stroke eraser on blank/lined/grid paper; Pointer Events
+      with Apple Pencil pressure, coalesced samples and palm rejection; Insert
+      flattens a 2x white PNG through the inline-image path at the caret (or
+      the end) with an optional caption for search. No server or schema change.
 - [x] Loading UX — `BootStatus` + `bootSlow` + `retry()` in `lib/store.tsx`,
       20s timeout ×2 attempts, route skeletons (`components/skeletons/`),
       `BootError`, `RouteProgress`, `loading.tsx` per route.
@@ -461,8 +466,8 @@ access (≈4–5 d).
       wifi). PWA shell already exists.
 - [ ] LaTeX rendering (body is Markdown now; server cap 20k chars, one
       attachment per note).
-- [ ] Inline images / paste into notes, handwriting & drawing (needs an
-      inline-attachment model).
+- [ ] Pen annotations on PDFs/slides and editable vector ink layers; the
+      handwriting sheet currently lands as a raster inline image.
 - [ ] AI-generated flashcards from a note (after §3.5).
 
 ---

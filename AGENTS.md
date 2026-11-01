@@ -108,6 +108,16 @@ server you did not start.
   `immediatelyRender: false` the editor is created after mount and extension
   options freeze first — extension callbacks must receive the live editor
   (the slash image picker does) instead of capturing the component's binding.
+- Handwriting: `HandwritingSheet.tsx` + `lib/ink.ts` — a pen, highlighter and
+  eraser sheet (blank, lined or grid) using Pointer Events: Apple Pencil
+  pressure, coalesced samples, palm rejection once a pen is detected,
+  whole-stroke eraser and undo/redo. "Insert into note" exports a 2x white PNG
+  through `store.uploadFile` (group-scoped for group notes) and inserts it with
+  `RichTextEditorHandle.insertImage` at the caret (or the end when the editor
+  was not focused), plus an optional caption paragraph for search. The PNG
+  rides the inline-image path, so no server change; ink is raster, not
+  re-editable or OCR'd. `Modal` grew an `ink` size and `autoFocus={false}` (the
+  caption field must not open the iPad keyboard on mount).
 - Previews: `lib/links.ts` recognises YouTube/Vimeo URLs and `LinkPreview.tsx`
   owns link rendering (click-to-play facade; the provider is only contacted on
   play; respects the `linkEmbeds` setting). `FilePreview.tsx` picks the pane:
