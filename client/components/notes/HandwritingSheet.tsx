@@ -400,7 +400,7 @@ export function HandwritingSheet({ onClose, onInsert }: HandwritingSheetProps) {
   return (
     <Modal
       title="Write by pen"
-      subtitle="Use an Apple Pencil, stylus, finger or mouse. The page is inserted into your note when you are done."
+      subtitle="Pen, stylus, finger or mouse."
       size="ink"
       onClose={requestClose}
       autoFocus={false}

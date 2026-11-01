@@ -55,7 +55,7 @@ export function Modal({
   return (
     <div
       ref={overlayRef}
-      className="nm-overlay"
+      className={`nm-overlay${size === "ink" ? " nm-overlay--ink" : ""}`}
       onMouseDown={(event) => {
         if (event.target === overlayRef.current && dismissible) onClose();
       }}
