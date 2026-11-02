@@ -51,6 +51,11 @@ One stop centre for studying:
 - [x] PWA — `app/manifest.ts`, icons in `public/icons/`, `public/sw.js`
       (network-first navigations + `/offline`), `ServiceWorkerRegister`,
       iOS install hint.
+- [x] Landing page + SEO — `app/page.tsx` rebuilt as a public marketing page
+      (header, Focus-view hero, feature ledger, three-step flow, FAQ, CTA,
+      footer); `lib/site.ts` is the metadata source; OG/Twitter image in
+      `public/og/`, `app/robots.ts`, `app/sitemap.ts`, JSON-LD, per-page
+      canonicals, noindex on app/invite/share/offline and a branded 404.
 - [x] Completed work orders archived in §9 below (emails replace Google
       invitations; MCP time awareness) — both verified in code.
 

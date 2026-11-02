@@ -1,6 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MoonMark } from "@/components/MoonMark";
+import { pageMeta } from "@/lib/site";
+
+export const metadata: Metadata = pageMeta({
+  title: "Sign in",
+  description:
+    "Sign in to Neoma with Elysiaa SSO to open your group boards, notes, iTa'leem deadlines and one calendar.",
+  path: "/login",
+});
 
 function safeNext(value: string | undefined): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/today";

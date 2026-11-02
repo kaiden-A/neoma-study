@@ -1,6 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MoonMark } from "@/components/MoonMark";
+import { pageMeta } from "@/lib/site";
+
+export const metadata: Metadata = pageMeta({
+  title: "Create your account",
+  description:
+    "Create a Neoma account with your university email: group project boards, shared study notes, iTa'leem deadlines and one calendar.",
+  path: "/signup",
+});
 
 const POINTS = [
   { icon: "fa-users", text: "Create a project group and invite your team by email in one step." },

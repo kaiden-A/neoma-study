@@ -26,3 +26,5 @@ Thumbs.db
 # --- firebase --------------------------------------------------------------
 .firebase/
 firebase-debug.log
+
+videos

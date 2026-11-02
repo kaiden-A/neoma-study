@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { PublicNoteView } from "./PublicNoteView";
 
 export const metadata: Metadata = {
-  title: "Shared note · Neoma",
+  title: "Shared note",
   description: "A note shared from Neoma, read-only.",
   robots: { index: false, follow: false },
 };

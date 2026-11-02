@@ -4,6 +4,14 @@ import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { ThemeScript } from "@/components/ThemeScript";
+import {
+  OG_IMAGE,
+  SITE_DESCRIPTION,
+  SITE_KEYWORDS,
+  SITE_NAME,
+  SITE_TITLE,
+  SITE_URL,
+} from "@/lib/site";
 
 import "./globals.css";
 
@@ -31,13 +39,47 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Neoma · Study OS",
-  description:
-    "Neoma — a study OS for group projects and personal notes. Shared task boards, deadline reminders, your study notes and one calendar on the home screen.",
-  applicationName: "Neoma",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: SITE_TITLE,
+    template: `%s · ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  keywords: SITE_KEYWORDS,
+  category: "education",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    locale: "en_MY",
+    url: "/",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [{ url: OG_IMAGE.url, alt: OG_IMAGE.alt }],
+  },
   appleWebApp: {
     capable: true,
-    title: "Neoma",
+    title: SITE_NAME,
     statusBarStyle: "default",
   },
   icons: {
