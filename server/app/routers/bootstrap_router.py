@@ -20,7 +20,7 @@ from ..schemas.moodle import CourseOut
 from ..schemas.notes import NoteOut
 from ..schemas.notifications import NotificationOut
 from ..schemas.settings import UserSettings
-from ..schemas.study import FlashcardOut, StudyOverview
+from ..schemas.study import FlashcardOut, QuizSummaryOut, StudyOverview
 from ..schemas.subjects import SubjectOut
 from ..schemas.tasks import TaskOut
 from ..schemas.users import PublicUser
@@ -33,6 +33,7 @@ from ..services import (
     moodle_services,
     note_services,
     notification_services,
+    quiz_services,
     settings_services,
     study_services,
     task_services,
@@ -52,6 +53,7 @@ class BootstrapOut(BaseModel):
     courses: list[CourseOut]
     notifications: list[NotificationOut]
     flashcards: list[FlashcardOut]
+    quizzes: list[QuizSummaryOut]
     study: StudyOverview
     ai: AiStatusOut
 
@@ -74,6 +76,7 @@ def bootstrap(user: User = Depends(require_user), db: DbSession = Depends(get_db
         courses=moodle_services.list_courses(db, user),
         notifications=notification_services.derive(db, user),
         flashcards=flashcard_services.list_cards(db, user),
+        quizzes=quiz_services.list_quizzes(db, user),
         study=study_services.overview(db, user),
         ai=ai_services.status(),
     )

@@ -9,6 +9,7 @@ import { TaskModal } from "@/components/tasks/TaskModal";
 import { TaskRow } from "@/components/tasks/TaskRow";
 import { TodoComposer, type AddMode } from "@/components/tasks/TodoComposer";
 import { Avatar, Dial, EmptyState, MarkerChip, Progress } from "@/components/ui/bits";
+import { useAssistant } from "@/lib/assistant";
 import { addDays, daysUntil, fmtDay, fmtDayLong, fmtMonthYear, fmtRelative, fmtTime, isSameDay, monthGrid, startOfDay } from "@/lib/dates";
 import { eventType } from "@/lib/markers";
 import { useStore } from "@/lib/store";
@@ -28,6 +29,7 @@ function greeting(hour: number): string {
 export default function TodayPage() {
   const store = useStore();
   const router = useRouter();
+  const { ask } = useAssistant();
   const now = useNow();
   const [anchor, setAnchor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
@@ -97,6 +99,20 @@ export default function TodayPage() {
             {greeting(today.getHours())}, {firstName}
           </h1>
           <div className="nm-head-actions">
+            {store.aiStatus?.chat ? (
+              <button
+                type="button"
+                className="nm-btn nm-btn--secondary"
+                onClick={() =>
+                  ask(
+                    "I have a lot due this week. Help me decide what to do and make me a to-do plan.",
+                  )
+                }
+              >
+                <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+                Plan my week
+              </button>
+            ) : null}
             <button type="button" className="nm-btn nm-btn--secondary" onClick={() => setNewGroup(true)}>
               <i className="fa-solid fa-users" aria-hidden="true" />
               New group

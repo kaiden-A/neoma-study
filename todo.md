@@ -56,6 +56,10 @@ One stop centre for studying:
       footer); `lib/site.ts` is the metadata source; OG/Twitter image in
       `public/og/`, `app/robots.ts`, `app/sitemap.ts`, JSON-LD, per-page
       canonicals, noindex on app/invite/share/offline and a branded 404.
+- [x] Quiz generator — note-scoped `quizzes` + `quiz_attempts` (migration
+      `7a4c2e9b1f30`), deterministic multiple-choice/true-false/short-answer
+      drafts, key-point scoring, Elpis refine and the `/quiz/[id]` player. The
+      migration still has to be applied to each environment.
 - [x] Completed work orders archived in §9 below (emails replace Google
       invitations; MCP time awareness) — both verified in code.
 
@@ -188,6 +192,15 @@ One stop centre for studying:
       outline; `/courses` and `/courses/announcements` send the course-list
       summary. No Moodle request is made during chat and every course is
       owner-checked. The context chip and quick prompts follow the page.
+- [x] Weekly planner (2 Nov 2026): every chat now carries a workspace snapshot
+      (open personal/group/iTa'leem tasks, next 7 days of events, due cards,
+      weekly minutes/streak, notes matching the question). A plan question
+      returns a `[[NEOMA_PLAN]]` JSON line that `schemas.ai.WeekPlan` validates
+      (≤7 days, ≤20 items, bounded minutes) and `/api/ai/chat` streams as a
+      `plan` frame. The dock shows **Review plan**; accepting creates only new
+      prep blocks through `POST /api/tasks/bulk`, never moves a deadline, and
+      can save the plan as a vault note. `/today` has **Plan my week**. The
+      agent stays tool-free; research/web search is still off.
 - [x] Quiz cards (30 Oct 2026): migration `94d323a0d272` adds `kind`,
       `options` and `answer_index`. The Generate modal gets a **Multiple
       choice** toggle; without Elpis it fills wrong options from the other
@@ -218,9 +231,10 @@ One stop centre for studying:
 
 ### 3.5 AI — LibreChat inside Neoma (skipped this pass, per request)
 
-> 30 Oct 2026: the card refine and the read-only assistant dock shipped as a
-> narrow slice of this section (`docs/elpis.md`). Tool-backed actions and a
-> persisted thread below are still open.
+> 30 Oct 2026: the card refine and the assistant dock shipped as a narrow slice
+> of this section (`docs/elpis.md`). 2 Nov 2026: the dock gained a validated
+> weekly planner (workspace snapshot → plan → approve-first tasks). Tool-backed
+> actions and a persisted thread below are still open.
 
 - [x] Findings (verified in LibreChat docs): they ship an **Agents API** —
       `POST /api/agents/v1/chat/completions` (OpenAI-compatible, API-key auth,

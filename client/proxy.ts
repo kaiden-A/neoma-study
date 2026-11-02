@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // in sync with SESSION_COOKIE_NAME (production on Firebase Hosting: __session).
 const SESSION_COOKIE = "neoma_session";
 
-const PROTECTED = ["/today", "/groups", "/vault", "/calendar", "/settings"];
+const PROTECTED = ["/today", "/groups", "/vault", "/calendar", "/settings", "/review", "/quiz"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

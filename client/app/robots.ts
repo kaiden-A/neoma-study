@@ -19,6 +19,7 @@ export default function robots(): MetadataRoute.Robots {
           "/calendar",
           "/review",
           "/tasks",
+          "/quiz",
           "/courses",
           "/notifications",
           "/settings",

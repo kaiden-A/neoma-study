@@ -95,6 +95,9 @@ class Draft:
     page: int | None = None
     score: int = 0
     order: int = 0
+    # The term a definition-shaped draft is about. Flashcards ignore it; the
+    # quiz generator uses it to build MCQs and short-answer prompts.
+    term: str | None = None
 
 
 def generate(
@@ -273,6 +276,7 @@ def _definition_line(
         page=page,
         score=score,
         order=order,
+        term=term,
     )
 
 
@@ -306,6 +310,7 @@ def _sentence_definition(
             page=page,
             score=score,
             order=order,
+            term=term,
         )
     return None
 
@@ -338,6 +343,7 @@ def _cloze(
                     page=page,
                     score=score + 3,
                     order=order,
+                    term=term,
                 )
 
     choices: list[tuple[int, str]] = []
@@ -364,6 +370,7 @@ def _cloze(
         page=page,
         score=score,
         order=order,
+        term=term,
     )
 
 
@@ -389,6 +396,7 @@ def _table(text: str, source: str, page: int | None, order: int) -> list[Draft]:
             page=page,
             score=7,
             order=order,
+            term=label,
         )
     ]
 

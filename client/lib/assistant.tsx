@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 
 import { ApiError, apiFetch } from "@/lib/api-client";
 import { useStore } from "@/lib/store";
+import type { WeekPlan } from "@/lib/types";
 
 export interface AssistantMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  plan?: WeekPlan | null;
 }
 
 export interface AssistantContext {
@@ -27,6 +29,7 @@ interface AssistantValue {
   error: string | null;
   context: AssistantContext | null;
   send: (text: string) => Promise<void>;
+  ask: (text: string) => void;
   stop: () => void;
   clear: () => void;
 }
@@ -37,13 +40,29 @@ function storageKey(userId: string): string {
   return `neoma.assistant.${userId || "anon"}`;
 }
 
+function isPlan(value: unknown): value is WeekPlan {
+  if (!value || typeof value !== "object") return false;
+  const plan = value as Record<string, unknown>;
+  return (
+    typeof plan.title === "string" &&
+    Array.isArray(plan.days) &&
+    plan.days.every((day) => {
+      if (!day || typeof day !== "object") return false;
+      const row = day as Record<string, unknown>;
+      return typeof row.date === "string" && Array.isArray(row.items);
+    }) &&
+    Array.isArray(plan.deferred)
+  );
+}
+
 function isMessage(value: unknown): value is AssistantMessage {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   return (
     typeof item.id === "string" &&
     (item.role === "user" || item.role === "assistant") &&
-    typeof item.content === "string"
+    typeof item.content === "string" &&
+    (item.plan == null || isPlan(item.plan))
   );
 }
 
@@ -167,6 +186,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
         const decoder = new TextDecoder();
         let buffer = "";
         let content = "";
+        let hasPlan = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -177,7 +197,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
           for (const frame of frames) {
             const line = frame.split("\n").find((part) => part.startsWith("data:"));
             if (!line) continue;
-            let payload: { text?: string; error?: string; done?: boolean };
+            let payload: { text?: string; error?: string; done?: boolean; plan?: WeekPlan };
             try {
               payload = JSON.parse(line.slice(5).trim()) as typeof payload;
             } catch {
@@ -186,6 +206,15 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
             if (payload.error) {
               setError(payload.error);
               continue;
+            }
+            if (payload.plan) {
+              hasPlan = true;
+              const plan = payload.plan;
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === assistantId ? { ...message, plan } : message,
+                ),
+              );
             }
             if (payload.text) {
               content += payload.text;
@@ -198,7 +227,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
           }
         }
 
-        if (!content) {
+        if (!content && !hasPlan) {
           setMessages((current) => current.filter((message) => message.id !== assistantId));
           setError((current) => current ?? "The assistant did not answer. Try again.");
         }
@@ -212,7 +241,9 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
                 : "The assistant is not available.",
           );
           setMessages((current) =>
-            current.filter((message) => message.id !== assistantId || Boolean(message.content)),
+            current.filter(
+              (message) => message.id !== assistantId || Boolean(message.content) || Boolean(message.plan),
+            ),
           );
         }
       } finally {
@@ -221,6 +252,14 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
       }
     },
     [busy, context, messages],
+  );
+
+  const ask = useCallback(
+    (text: string) => {
+      setOpen(true);
+      void send(text);
+    },
+    [send],
   );
 
   const value = useMemo<AssistantValue>(
@@ -233,6 +272,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
       error,
       context,
       send,
+      ask,
       stop,
       clear,
     }),
@@ -245,6 +285,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
       error,
       context,
       send,
+      ask,
       stop,
       clear,
     ],

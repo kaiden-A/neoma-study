@@ -142,7 +142,7 @@ def _apply_links(task: Task, links: list[TaskLinkIn]) -> None:
         )
 
 
-def create_task(db: DbSession, user: User, data: TaskCreate) -> TaskOut:
+def _create_task(db: DbSession, user: User, data: TaskCreate) -> Task:
     group_id: uuid.UUID | None = None
     if data.groupId:
         try:
@@ -167,13 +167,33 @@ def create_task(db: DbSession, user: User, data: TaskCreate) -> TaskOut:
     _apply_assignees(db, user, task, data.assigneeIds)
     _apply_subtasks(task, data.subtasks)
     _apply_links(task, data.links)
-    db.commit()
-    db.refresh(task)
+    return task
+
+
+def _announce_task(db: DbSession, user: User, task: Task) -> None:
     google_services.push_task(db, user, task)
     email_services.send_task_assignment(
         db, actor=user, task=task, recipient_ids=[row.user_id for row in task.assignees]
     )
+
+
+def create_task(db: DbSession, user: User, data: TaskCreate) -> TaskOut:
+    task = _create_task(db, user, data)
+    db.commit()
+    db.refresh(task)
+    _announce_task(db, user, task)
     return task_out(task)
+
+
+def create_tasks(db: DbSession, user: User, items: list[TaskCreate]) -> list[TaskOut]:
+    """Create a reviewed plan in one transaction, then push the side effects."""
+    tasks = [_create_task(db, user, data) for data in items]
+    db.commit()
+    for task in tasks:
+        db.refresh(task)
+    for task in tasks:
+        _announce_task(db, user, task)
+    return [task_out(task) for task in tasks]
 
 
 def update_task(db: DbSession, user: User, task_id: uuid.UUID, patch: TaskPatch) -> TaskOut:

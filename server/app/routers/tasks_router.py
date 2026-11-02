@@ -7,7 +7,7 @@ from ..database import get_db
 from ..dependencies import require_user
 from ..models import User
 from ..models.enums import TaskStatus
-from ..schemas.tasks import PostponeRequest, TaskCreate, TaskOut, TaskPatch
+from ..schemas.tasks import PostponeRequest, TaskBulkIn, TaskCreate, TaskOut, TaskPatch
 from ..services import task_services
 from ..utils import from_ms
 
@@ -42,6 +42,13 @@ def create_task(
     data: TaskCreate, user: User = Depends(require_user), db: DbSession = Depends(get_db)
 ) -> TaskOut:
     return task_services.create_task(db, user, data)
+
+
+@router.post("/bulk", response_model=list[TaskOut], status_code=201)
+def create_tasks(
+    data: TaskBulkIn, user: User = Depends(require_user), db: DbSession = Depends(get_db)
+) -> list[TaskOut]:
+    return task_services.create_tasks(db, user, data.tasks)
 
 
 @router.get("/{task_id}", response_model=TaskOut)

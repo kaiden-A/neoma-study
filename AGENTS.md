@@ -178,6 +178,14 @@ server you did not start.
   nav badge; `services/study_services.py` derives the dashboard, weekly minutes,
   streak and "Continue studying" (`/api/study/*`, included in bootstrap). The
   derived `review_due:{user}` notification feeds the digest too.
+- Quizzes: `services/quiz_services.py` + `services/quizgen.py` (pure rules)
+  turn a note into multiple-choice, true/false and short-answer questions.
+  `quizzes.questions` and `quiz_attempts.answers` are JSONB; generation never
+  writes, saving shuffles MCQ options, and attempts are scored server-side
+  (objective by index, written by ticked key points). The Elpis pass
+  (`ai_services.refine_quiz`) must keep the question's `term` and never change
+  the answer. The note page has `GenerateQuizModal`; the player is `/quiz/[id]`
+  (in `proxy.ts`'s protected list and disallowed in `robots.ts`).
 - Settings: `linkEmbeds`/`officePreview` (and notification `kinds.review`) are in
   the `users.settings` JSONB bag — validated in `schemas/settings.py`, no migration.
 - Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.

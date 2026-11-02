@@ -23,10 +23,13 @@ function decodeHtml(value: string): string {
 // rewritten to a share-scoped path on public pages); everything else still
 // has to be a real http(s) URL.
 const APP_FILE_PATH = /^\/api\/(?:files|shares)\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/;
+// The assistant links to Neoma pages (a note, a course, the week plan).
+const APP_ROUTE =
+  /^\/(?:vault|today|tasks|review|groups|courses|calendar|settings|quiz)(?:\/[A-Za-z0-9._~-]+)*(?:\?[^\s#]*)?(?:#[^\s]*)?$/;
 
 function safeUrl(value: string): string | null {
   const raw = decodeHtml(value.trim());
-  if (APP_FILE_PATH.test(raw)) return raw;
+  if (APP_FILE_PATH.test(raw) || APP_ROUTE.test(raw)) return raw;
   if (!/^https?:\/\//i.test(raw)) return null;
   try {
     const url = new URL(raw);

@@ -27,7 +27,10 @@ def chat(
     """Stream a read-only assistant reply over SSE."""
     if not ai_services.chat_ready():
         raise UnavailableError("The assistant is not connected yet.")
-    context = ai_services.build_context(db, user, data.context)
+    last = data.messages[-1]
+    context = ai_services.build_context(
+        db, user, data.context, query=last.content if last.role == "user" else None
+    )
     return StreamingResponse(
         ai_services.chat_stream(data.messages, context=context),
         media_type="text/event-stream",

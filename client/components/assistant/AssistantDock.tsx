@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { PlanModal } from "@/components/assistant/PlanModal";
 import { useAssistant } from "@/lib/assistant";
 import { renderMarkdown } from "@/lib/markdown";
 import { useStore } from "@/lib/store";
+import type { WeekPlan } from "@/lib/types";
 
 export function AssistantDock() {
   const {
@@ -20,6 +22,7 @@ export function AssistantDock() {
   } = useAssistant();
   const { aiStatus } = useStore();
   const [draft, setDraft] = useState("");
+  const [review, setReview] = useState<WeekPlan | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -48,7 +51,7 @@ export function AssistantDock() {
         ? ["What's due next?", "Summarise this course", "What did I miss?"]
         : context?.kind === "courses"
           ? ["What needs attention this week?", "Which course needs the most work?"]
-          : [];
+          : ["Plan my week", "What should I do today?"];
   const placeholder =
     context?.kind === "note"
       ? "Ask about this note…"
@@ -146,24 +149,61 @@ export function AssistantDock() {
                     </button>
                   ))}
                 </div>
-              ) : (
-                <p className="nm-help">Open a note or a course first to give Elpis something to read.</p>
-              )}
+              ) : null}
+              <p className="nm-help">
+                Elpis sees your week, the page you are on, and notes that match your question.
+              </p>
             </div>
           ) : (
             messages.map((message) => (
               <div key={message.id} className={`nm-assistant-msg is-${message.role}`}>
                 {message.role === "assistant" ? (
-                  message.content ? (
-                    <div
-                      className="nm-assistant-prose"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-                    />
-                  ) : (
-                    <span className="nm-assistant-typing" aria-label="Thinking">
-                      <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
-                    </span>
-                  )
+                  <>
+                    {message.content ? (
+                      <div
+                        className="nm-assistant-prose"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+                      />
+                    ) : null}
+                    {message.plan ? (
+                      <div className="nm-assistant-plan">
+                        <div className="nm-assistant-plan-hd">
+                          <span className="nm-assistant-plan-icon" aria-hidden="true">
+                            <i className="fa-solid fa-calendar-week" />
+                          </span>
+                          <div className="nm-assistant-plan-titles">
+                            <strong>{message.plan.title}</strong>
+                            <span className="nm-meta nm-mono">
+                              {message.plan.days.reduce((total, day) => total + day.items.length, 0)}{" "}
+                              items ·{" "}
+                              {message.plan.days.reduce(
+                                (total, day) =>
+                                  total + day.items.reduce((sum, item) => sum + item.minutes, 0),
+                                0,
+                              )}{" "}
+                              min
+                            </span>
+                          </div>
+                        </div>
+                        {message.plan.summary ? (
+                          <p className="nm-help">{message.plan.summary}</p>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="nm-btn nm-btn--secondary nm-btn--sm"
+                          onClick={() => setReview(message.plan ?? null)}
+                        >
+                          Review plan
+                          <i className="fa-solid fa-arrow-right" aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : null}
+                    {!message.content && !message.plan ? (
+                      <span className="nm-assistant-typing" aria-label="Thinking">
+                        <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
+                      </span>
+                    ) : null}
+                  </>
                 ) : (
                   <p>{message.content}</p>
                 )}
@@ -222,6 +262,7 @@ export function AssistantDock() {
         </form>
         <p className="nm-help nm-assistant-foot">Elpis can make mistakes. Check the note.</p>
       </aside>
+      {review ? <PlanModal plan={review} onClose={() => setReview(null)} /> : null}
     </>
   );
 }

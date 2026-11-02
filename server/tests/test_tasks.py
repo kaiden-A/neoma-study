@@ -30,6 +30,33 @@ def test_personal_task_defaults(client: TestClient, sign_in, make_user, db: DbSe
     assert task["completedAt"] is None
 
 
+def test_bulk_create_tasks(client: TestClient, sign_in, make_user, db: DbSession) -> None:
+    sign_in(make_user(db))
+
+    response = client.post(
+        "/api/tasks/bulk",
+        json={
+            "tasks": [
+                {"title": "Plan A"},
+                {"title": "Plan B", "priority": "high", "subtasks": [{"title": "Read"}]},
+            ]
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert [task["title"] for task in body] == ["Plan A", "Plan B"]
+    assert body[1]["priority"] == "high"
+    assert body[1]["subtasks"][0]["title"] == "Read"
+    assert {task["title"] for task in client.get("/api/tasks").json()} == {"Plan A", "Plan B"}
+
+
+def test_bulk_rejects_an_empty_plan(client: TestClient, sign_in, make_user, db: DbSession) -> None:
+    sign_in(make_user(db))
+
+    assert client.post("/api/tasks/bulk", json={"tasks": []}).status_code == 422
+
+
 def test_tasks_are_scoped_to_membership(client: TestClient, sign_in, make_user, db: DbSession) -> None:
     owner = make_user(db, name="Ada", email="ada@example.com")
     outsider = make_user(db, name="Eve", email="eve@example.com")

@@ -28,6 +28,7 @@ from .routers import (
     moodle_router,
     notes_router,
     notifications_router,
+    quizzes_router,
     settings_router,
     shares_router,
     study_router,
@@ -119,6 +120,7 @@ app.include_router(notes_router.router)
 app.include_router(shares_router.router)
 app.include_router(links_router.router)
 app.include_router(flashcards_router.router)
+app.include_router(quizzes_router.router)
 app.include_router(ai_router.router)
 app.include_router(study_router.router)
 app.include_router(subjects_router.router)

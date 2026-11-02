@@ -43,6 +43,48 @@ class Flashcard(Base):
     )
 
 
+class Quiz(Base):
+    """A saved quiz generated from a note: MCQ, true/false and short answers."""
+
+    __tablename__ = "quizzes"
+    __table_args__ = (Index("ix_quizzes_owner_note", "owner_id", "note_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("notes.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    questions: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class QuizAttempt(Base):
+    """One submitted run through a quiz; the server computes both scores."""
+
+    __tablename__ = "quiz_attempts"
+    __table_args__ = (Index("ix_quiz_attempts_quiz_created", "quiz_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    quiz_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("quizzes.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    answers: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    objective_correct: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    objective_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    written_covered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    written_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class StudySession(Base):
     """A stretch of time actually spent studying one note."""
 

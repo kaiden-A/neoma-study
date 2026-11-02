@@ -32,6 +32,7 @@ import type {
   FlashcardInput,
   FlashcardPatchInput,
   GenerateCardsResponse,
+  GenerateQuizResponse,
   Group,
   GroupKind,
   GroupNoteInput,
@@ -45,6 +46,11 @@ import type {
   NoteShareState,
   NotificationItem,
   PublicUser,
+  Quiz,
+  QuizAnswer,
+  QuizAttempt,
+  QuizCreateInput,
+  QuizSummary,
   StudyOverview,
   StudySession,
   StudySessionInput,
@@ -143,6 +149,7 @@ interface StoreValue {
   announcementMeta: Record<string, AnnouncementMeta>;
   notifications: NotificationItem[];
   flashcards: Flashcard[];
+  quizzes: QuizSummary[];
   study: StudyOverview | null;
   aiStatus: AiStatus | null;
   refresh: () => Promise<void>;
@@ -194,6 +201,16 @@ interface StoreValue {
   updateCard: (id: string, patch: FlashcardPatchInput) => Promise<Flashcard>;
   deleteCard: (id: string) => Promise<void>;
   gradeCard: (id: string, grade: FlashcardGrade) => Promise<Flashcard>;
+  generateQuiz: (
+    noteId: string,
+    objective?: number,
+    subjective?: number,
+    refine?: boolean,
+  ) => Promise<GenerateQuizResponse>;
+  createQuiz: (input: QuizCreateInput) => Promise<Quiz>;
+  deleteQuiz: (id: string) => Promise<void>;
+  getQuiz: (id: string) => Promise<Quiz>;
+  submitQuizAttempt: (id: string, answers: QuizAnswer[]) => Promise<QuizAttempt>;
   saveSession: (input: StudySessionInput) => Promise<StudySession>;
   searchNotes: (query: string) => Promise<Note[]>;
   unreadCount: () => number;
@@ -210,6 +227,7 @@ interface StoreValue {
   regenerateInvite: (id: string) => Promise<Group>;
   joinGroupByCode: (code: string) => Promise<Group>;
   createTask: (input: TaskCreateInput) => Promise<Task>;
+  createTasks: (inputs: TaskCreateInput[]) => Promise<Task[]>;
   updateTask: (id: string, patch: TaskPatchInput) => Promise<Task>;
   deleteTask: (id: string) => Promise<void>;
   postponeTask: (id: string) => Promise<Task>;
@@ -241,7 +259,21 @@ interface StoreValue {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-type LocalRow = Task | Note | CalendarEvent | Flashcard;
+type LocalRow = Task | Note | CalendarEvent | Flashcard | QuizSummary;
+
+function quizSummary(quiz: Quiz): QuizSummary {
+  return {
+    id: quiz.id,
+    noteId: quiz.noteId,
+    noteTitle: quiz.noteTitle,
+    title: quiz.title,
+    questionCount: quiz.questionCount,
+    objectiveCount: quiz.objectiveCount,
+    writtenCount: quiz.writtenCount,
+    createdAt: quiz.createdAt,
+    updatedAt: quiz.updatedAt,
+  };
+}
 
 // Optimistic merges: a patch lands in local state before the server answers,
 // so a tick or a column move is instant. The server response replaces it.
@@ -341,6 +373,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [announcementMeta, setAnnouncementMeta] = useState<Record<string, AnnouncementMeta>>({});
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [study, setStudy] = useState<StudyOverview | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
@@ -386,6 +419,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setCourses(data.courses ?? []);
     setNotifications(data.notifications ?? []);
     setFlashcards(data.flashcards ?? []);
+    setQuizzes(data.quizzes ?? []);
     setStudy(data.study ?? null);
     setAiStatus(data.ai ?? null);
     booted.current = true;
@@ -675,6 +709,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       announcementMeta,
       notifications,
       flashcards,
+      quizzes,
       study,
       aiStatus,
       refresh,
@@ -999,6 +1034,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         replaceTask(task);
         return task;
       },
+      createTasks: async (inputs) => {
+        if (inputs.length === 0) return [];
+        const created = await apiPost<Task[]>("/api/tasks/bulk", { tasks: inputs });
+        created.forEach(replaceTask);
+        return created;
+      },
       updateTask: async (id, patch) => {
         const current = tasks.find((task) => task.id === id);
         beginMutation(id, current);
@@ -1204,6 +1245,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           throw error;
         }
       },
+      generateQuiz: async (noteId, objective = 10, subjective = 3, refine = false) =>
+        apiPost<GenerateQuizResponse>("/api/quizzes/generate", {
+          noteId,
+          objective,
+          subjective,
+          refine,
+        }),
+      createQuiz: async (input) => {
+        const quiz = await apiPost<Quiz>("/api/quizzes", input);
+        setQuizzes((current) => [
+          quizSummary(quiz),
+          ...current.filter((item) => item.id !== quiz.id),
+        ]);
+        return quiz;
+      },
+      deleteQuiz: async (id) => {
+        beginMutation(id, quizzes.find((quiz) => quiz.id === id));
+        setQuizzes((current) => current.filter((quiz) => quiz.id !== id));
+        try {
+          await apiDelete(`/api/quizzes/${id}`);
+          if (finishMutation(id).last) stableRows.current.delete(id);
+        } catch (error) {
+          const { rollback } = finishMutation(id);
+          if (rollback) setQuizzes((current) => [rollback as QuizSummary, ...current]);
+          notifyFailure();
+          throw error;
+        }
+      },
+      getQuiz: (id) => apiGet<Quiz>(`/api/quizzes/${id}`),
+      submitQuizAttempt: (id, answers) =>
+        apiPost<QuizAttempt>(`/api/quizzes/${id}/attempts`, { answers }),
       createSubject: async (name) => {
         const subject = await apiPost<Subject>("/api/subjects", { name });
         setSubjects((current) => [...current, subject]);
@@ -1348,6 +1420,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     announcementMeta,
     notifications,
     flashcards,
+    quizzes,
     study,
     aiStatus,
     refresh,

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { FilePreview } from "@/components/notes/FilePreview";
 import { GenerateCardsModal } from "@/components/notes/GenerateCardsModal";
+import { GenerateQuizModal } from "@/components/notes/GenerateQuizModal";
 import { HandwritingSheet } from "@/components/notes/HandwritingSheet";
 import { LinkPreview } from "@/components/notes/LinkPreview";
 import { useNoteActions } from "@/components/notes/NoteActions";
@@ -72,6 +73,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
   const [penOpen, setPenOpen] = useState(false);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -358,6 +360,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const timeMarks = video ? parseTimeMarks(body) : [];
   const pageMarks = isPdf ? parsePageMarks(body) : [];
   const cards = store.cardsForNote(note.id);
+  const noteQuizzes = store.quizzes.filter((quiz) => quiz.noteId === note.id);
 
   const saveLabel = saveState === "saving" ? "Saving…" : "Save changes";
 
@@ -669,6 +672,59 @@ export function NoteEditor({ noteId }: { noteId: string }) {
     </div>
   );
 
+  const quizzesCard = (
+    <div className="nm-excerpts">
+      <div className="nm-card-hd">
+        <h3 className="nm-card-title">Quizzes</h3>
+        <span className="nm-mono nm-meta">{noteQuizzes.length}</span>
+        <div className="nm-genactions">
+          <button
+            type="button"
+            className="nm-btn nm-btn--ghost nm-btn--sm"
+            onClick={() => setQuizOpen(true)}
+          >
+            <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+            Generate quiz
+          </button>
+        </div>
+      </div>
+      {noteQuizzes.length ? (
+        <ul className="nm-excerpts-list">
+          {noteQuizzes.map((quiz) => (
+            <li key={quiz.id} className="nm-excerpt nm-quiz-row">
+              <div className="nm-quiz-row-main">
+                <p className="nm-excerpt-quote">{quiz.title}</p>
+                <p className="nm-meta">
+                  {quiz.questionCount} question{quiz.questionCount === 1 ? "" : "s"} ·{" "}
+                  {quiz.objectiveCount} objective · {quiz.writtenCount} written
+                </p>
+              </div>
+              <div className="nm-excerpt-actions">
+                <Link className="nm-btn nm-btn--secondary nm-btn--sm" href={`/quiz/${quiz.id}`}>
+                  <i className="fa-solid fa-play" aria-hidden="true" />
+                  Start
+                </Link>
+                <button
+                  type="button"
+                  className="nm-iconbtn nm-iconbtn--sm"
+                  aria-label={`Delete ${quiz.title}`}
+                  onClick={() => void store.deleteQuiz(quiz.id).catch(() => {})}
+                >
+                  <i className="fa-solid fa-trash" aria-hidden="true" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="nm-help">
+          Generate multiple choice, true/false and short written questions from this note. Written
+          answers are checked against a model answer and its key points.
+        </p>
+      )}
+    </div>
+  );
+
   const writerBody = (
     <div className="nm-writer">
       <div className="nm-writer-head">
@@ -736,6 +792,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
       {writerBody}
       {excerptsCard}
       {cardsCard}
+      {quizzesCard}
     </section>
   );
 
@@ -900,6 +957,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             {writerBody}
             {excerptsCard}
             {cardsCard}
+            {quizzesCard}
           </div>
 
           <aside className="nm-note-side">
@@ -1040,6 +1098,14 @@ export function NoteEditor({ noteId }: { noteId: string }) {
           noteId={note.id}
           noteTitle={note.title}
           onClose={() => setGenerateOpen(false)}
+        />
+      ) : null}
+
+      {quizOpen ? (
+        <GenerateQuizModal
+          noteId={note.id}
+          noteTitle={note.title}
+          onClose={() => setQuizOpen(false)}
         />
       ) : null}
 

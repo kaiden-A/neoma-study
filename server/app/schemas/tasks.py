@@ -73,6 +73,12 @@ class TaskPatch(BaseModel):
     links: list[TaskLinkIn] | None = Field(default=None, max_length=50)
 
 
+class TaskBulkIn(BaseModel):
+    """A reviewed week plan; bounded so one request cannot flood a board."""
+
+    tasks: list[TaskCreate] = Field(min_length=1, max_length=20)
+
+
 class PostponeRequest(BaseModel):
     # The client sends its UTC offset so "tomorrow 09:00" means local morning.
     timezoneOffsetMinutes: int = 0

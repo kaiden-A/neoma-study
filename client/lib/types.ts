@@ -101,6 +101,37 @@ export interface Task {
   moodle?: boolean;
 }
 
+/** The validated week plan Elpis proposes; Neoma renders and applies it. */
+export interface WeekPlanItem {
+  title: string;
+  taskId: string | null;
+  dueAt: number | null;
+  priority: TaskPriority;
+  minutes: number;
+  reason: string;
+  tip: string;
+  subtasks: string[];
+}
+
+export interface WeekPlanDay {
+  date: string;
+  label: string;
+  items: WeekPlanItem[];
+}
+
+export interface WeekPlanDeferred {
+  taskId: string | null;
+  title: string;
+  reason: string;
+}
+
+export interface WeekPlan {
+  title: string;
+  summary: string;
+  days: WeekPlanDay[];
+  deferred: WeekPlanDeferred[];
+}
+
 export interface RequestState {
   open: boolean;
   answeredBy: string | null;
@@ -405,6 +436,7 @@ export interface Bootstrap {
   courses?: Course[];
   notifications?: NotificationItem[];
   flashcards?: Flashcard[];
+  quizzes?: QuizSummary[];
   study?: StudyOverview;
   ai?: AiStatus;
 }
@@ -496,6 +528,72 @@ export interface GenerateCardsResponse {
   refined: boolean;
   cards: FlashcardDraft[];
   notice: string | null;
+}
+
+export type QuizKind = "mcq" | "true_false" | "short";
+
+export interface QuizQuestion {
+  kind: QuizKind;
+  term: string;
+  prompt: string;
+  options: string[];
+  answerIndex: number | null;
+  modelAnswer: string;
+  keyPoints: string[];
+  explanation: string;
+  source: string;
+  page: number | null;
+}
+
+export interface GenerateQuizResponse {
+  noteId: string;
+  noteTitle: string;
+  title: string;
+  engine: "rules" | "ai";
+  refined: boolean;
+  questions: QuizQuestion[];
+  notice: string | null;
+}
+
+export interface QuizSummary {
+  id: string;
+  noteId: string;
+  noteTitle: string | null;
+  title: string;
+  questionCount: number;
+  objectiveCount: number;
+  writtenCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface QuizAnswer {
+  index: number;
+  choice: number | null;
+  text: string;
+  covered: number[];
+}
+
+export interface QuizAttempt {
+  id: string;
+  quizId: string;
+  answers: QuizAnswer[];
+  objectiveCorrect: number;
+  objectiveTotal: number;
+  writtenCovered: number;
+  writtenTotal: number;
+  createdAt: number;
+}
+
+export interface Quiz extends QuizSummary {
+  questions: QuizQuestion[];
+  lastAttempt: QuizAttempt | null;
+}
+
+export interface QuizCreateInput {
+  noteId: string;
+  title: string;
+  questions: QuizQuestion[];
 }
 
 export interface StudySession {

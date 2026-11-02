@@ -14,7 +14,7 @@ from .groups import EmailLog, Group, GroupLink, GroupMember, GroupTopic, Notific
 from .moodle import MoodleAccount, MoodleAnnouncement, MoodleAssignment, MoodleCourse
 from .notes import FileObject, Note, NoteShare, Subject
 from .sessions import Session
-from .study import Flashcard, StudySession
+from .study import Flashcard, Quiz, QuizAttempt, StudySession
 from .tasks import Task, TaskAssignee, TaskLink, TaskSubtask
 from .users import User, utcnow
 
@@ -40,6 +40,8 @@ __all__ = [
     "NoteShare",
     "NoteType",
     "NotificationState",
+    "Quiz",
+    "QuizAttempt",
     "Session",
     "StudySession",
     "Subject",
