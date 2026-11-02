@@ -6,14 +6,14 @@ import { Modal } from "@/components/ui/Modal";
 import { useOverlays } from "@/components/ui/Overlays";
 import { fmtDay, fmtTime } from "@/lib/dates";
 import { useStore, type TaskCreateInput } from "@/lib/store";
-import type { WeekPlan, WeekPlanItem } from "@/lib/types";
+import type { Task, WeekPlan, WeekPlanItem } from "@/lib/types";
 
 function itemKey(dayIndex: number, itemIndex: number): string {
   return `${dayIndex}:${itemIndex}`;
 }
 
 function planMarkdown(plan: WeekPlan): string {
-  const lines = [`# ${plan.title}`, "", plan.summary.trim(), ""];
+  const lines = [`# ${plan.title}`, "", (plan.summary || "").trim(), ""];
   for (const day of plan.days) {
     lines.push(`## ${day.label || day.date}`, "");
     for (const item of day.items) {
@@ -55,7 +55,15 @@ function createInput(item: WeekPlanItem): TaskCreateInput {
   };
 }
 
-export function PlanModal({ plan, onClose }: { plan: WeekPlan; onClose: () => void }) {
+export function PlanModal({
+  plan,
+  onClose,
+  onCreated,
+}: {
+  plan: WeekPlan;
+  onClose: () => void;
+  onCreated?: (created: Task[], keys: string[]) => void;
+}) {
   const store = useStore();
   const { toast } = useOverlays();
   const [saving, setSaving] = useState(false);
@@ -99,6 +107,10 @@ export function PlanModal({ plan, onClose }: { plan: WeekPlan; onClose: () => vo
     setError(null);
     try {
       const created = await store.createTasks(selected.map((row) => createInput(row.item)));
+      onCreated?.(
+        created,
+        selected.map((row) => row.key),
+      );
       toast(`${created.length} task${created.length === 1 ? "" : "s"} added to your list`, {
         kind: "success",
         icon: "fa-list-check",

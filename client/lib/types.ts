@@ -106,6 +106,7 @@ export interface WeekPlanItem {
   title: string;
   taskId: string | null;
   dueAt: number | null;
+  time?: string | null;
   priority: TaskPriority;
   minutes: number;
   reason: string;

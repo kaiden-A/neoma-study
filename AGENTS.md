@@ -186,6 +186,13 @@ server you did not start.
   (`ai_services.refine_quiz`) must keep the question's `term` and never change
   the answer. The note page has `GenerateQuizModal`; the player is `/quiz/[id]`
   (in `proxy.ts`'s protected list and disallowed in `robots.ts`).
+- Weekly planner: `ai_services.workspace_snapshot` sends open tasks, events,
+  due cards, study stats and matching notes with every chat. A planning
+  question ends with one `[[NEOMA_PLAN]]` JSON line; `schemas.ai.WeekPlan`
+  validates it (≤7 days, ≤20 items, bounded strings/minutes) and `/api/ai/chat`
+  streams it as a `plan` frame. The dock's `PlanModal` creates only new prep
+  blocks through `POST /api/tasks/bulk`; existing deadlines are never moved and
+  the model never writes directly. Web research is not part of the loop yet.
 - Settings: `linkEmbeds`/`officePreview` (and notification `kinds.review`) are in
   the `users.settings` JSONB bag — validated in `schemas/settings.py`, no migration.
 - Calendar: `services/event_services.py`; `.ics` + Google links in `ics_services.py`.

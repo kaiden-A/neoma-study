@@ -648,8 +648,10 @@ export default function SettingsPage() {
           </div>
           <div className="nm-card-bd">
             <p className="nm-meta mb-3">
-              Elpis plugs in through an MCP server at <span className="nm-mono">/mcp</span>. Tools act as the
-              member whose token (or static key) the client presents.
+              Elpis plugs in through an MCP server at <span className="nm-mono">/mcp</span> when you use it
+              from LibreChat. Tools act as the member whose token (or static key) the client presents. The
+              <strong>Review plan</strong> flow in the assistant dock uses your own Neoma session instead and
+              does not need this key.
             </p>
             <Field label="MCP endpoint" htmlFor="st-elpis-url">
               <input
@@ -674,7 +676,7 @@ export default function SettingsPage() {
                 checked={settings.elpis.enabled}
                 onChange={(event) => void patchSettings({ elpis: { enabled: event.target.checked } }, true)}
               />
-              <span>Allow Elpis to read and write Neoma</span>
+              <span>Allow the Elpis MCP client to read and write Neoma</span>
             </label>
             <div className="nm-toollist">
               {MCP_TOOLS.map(([tool, description]) => (

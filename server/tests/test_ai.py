@@ -1,6 +1,7 @@
 """The Elpis refine pass and page context: ownership, fallbacks and shape."""
 
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -533,6 +534,22 @@ def test_week_plan_normalizes_model_variants() -> None:
     assert item.taskId is None
     assert item.priority.value == "med"
     assert item.dueAt is not None and item.dueAt > 0
+
+
+def test_week_plan_accepts_a_copied_task_label() -> None:
+    task_id = uuid.uuid4()
+    plan = WeekPlan.model_validate(
+        _plan_payload(
+            days=[
+                {
+                    "date": "2026-11-02",
+                    "items": [{"title": "Existing", "taskId": f"taskId={task_id}", "minutes": 30}],
+                }
+            ]
+        )
+    )
+
+    assert plan.days[0].items[0].taskId == str(task_id)
 
 
 def test_parse_plan_schedules_a_local_time(monkeypatch) -> None:

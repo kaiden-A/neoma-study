@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname } from "next/navigation";
 
 import { ApiError, apiFetch } from "@/lib/api-client";
+import { fmtTime } from "@/lib/dates";
 import { useStore } from "@/lib/store";
 import type { WeekPlan } from "@/lib/types";
 
@@ -30,6 +31,7 @@ interface AssistantValue {
   context: AssistantContext | null;
   send: (text: string) => Promise<void>;
   ask: (text: string) => void;
+  setPlan: (messageId: string, plan: WeekPlan) => void;
   stop: () => void;
   clear: () => void;
 }
@@ -53,6 +55,22 @@ function isPlan(value: unknown): value is WeekPlan {
     }) &&
     Array.isArray(plan.deferred)
   );
+}
+
+function planBrief(plan: WeekPlan): string {
+  return plan.days
+    .map(
+      (day) =>
+        `${day.label || day.date}: ` +
+        day.items
+          .map(
+            (item) =>
+              `${item.title} (${item.minutes} min${item.dueAt ? `, ${fmtTime(item.dueAt)}` : ""})`,
+          )
+          .join("; "),
+    )
+    .join("\n")
+    .slice(0, 2000);
 }
 
 function isMessage(value: unknown): value is AssistantMessage {
@@ -158,7 +176,12 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            messages: history.slice(-20).map(({ role, content }) => ({ role, content })),
+            messages: history.slice(-20).map(({ role, content, plan }) => ({
+              role,
+              content: plan
+                ? `${content || "Here is the plan."}\n\n[Your previous week plan]\n${planBrief(plan)}`
+                : content,
+            })),
             context:
               context?.kind === "note"
                 ? { noteId: context.id }
@@ -262,6 +285,12 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
     [send],
   );
 
+  const setPlan = useCallback((messageId: string, plan: WeekPlan) => {
+    setMessages((current) =>
+      current.map((message) => (message.id === messageId ? { ...message, plan } : message)),
+    );
+  }, []);
+
   const value = useMemo<AssistantValue>(
     () => ({
       open,
@@ -273,6 +302,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
       context,
       send,
       ask,
+      setPlan,
       stop,
       clear,
     }),
@@ -286,6 +316,7 @@ function AssistantSession({ userId, children }: { userId: string; children: Reac
       context,
       send,
       ask,
+      setPlan,
       stop,
       clear,
     ],

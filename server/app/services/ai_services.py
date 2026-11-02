@@ -109,7 +109,7 @@ only so the prompt stays readable):
 
 Plan rules:
 - At most 7 days and 20 items. Keep the week realistic; do not fill every
-  evening.
+  evening. Avoid blocks that collide with the events in the context.
 - Use taskId only for a task that appears in the context; copy the UUID after
   `taskId=`. New preparation or study blocks have taskId null.
 - Never move or duplicate an iTa'leem deadline; plan the work around it.
@@ -480,6 +480,36 @@ def _parse_plan(raw: str) -> WeekPlan | None:
         return None
     try:
         data, _ = json.JSONDecoder().raw_decode(text[start:])
+    except ValueError as exc:
+        log.warning("Elpis returned an unreadable week plan: %s", exc)
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw_days = data.get("days")
+    if not isinstance(raw_days, list):
+        return None
+    valid_days = [
+        day
+        for day in raw_days
+        if isinstance(day, dict)
+        and isinstance(day.get("date"), str)
+        and re.fullmatch(r"\d{4}-\d{2}-\d{2}", day["date"])
+    ]
+    data["days"] = valid_days[:7]
+    remaining = 20
+    for day in data["days"]:
+        if not isinstance(day, dict):
+            continue
+        items = day.get("items")
+        if not isinstance(items, list):
+            day["items"] = []
+            continue
+        day["items"] = items[:remaining]
+        remaining -= len(day["items"])
+    if not isinstance(data.get("deferred"), list):
+        data["deferred"] = []
+    data["deferred"] = data["deferred"][:10]
+    try:
         plan = WeekPlan.model_validate(data)
     except (ValueError, TypeError) as exc:
         log.warning("Elpis returned an invalid week plan: %s", exc)

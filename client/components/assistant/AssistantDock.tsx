@@ -6,7 +6,21 @@ import { PlanModal } from "@/components/assistant/PlanModal";
 import { useAssistant } from "@/lib/assistant";
 import { renderMarkdown } from "@/lib/markdown";
 import { useStore } from "@/lib/store";
-import type { WeekPlan } from "@/lib/types";
+import type { Task, WeekPlan } from "@/lib/types";
+
+function withCreated(plan: WeekPlan, created: Task[], keys: string[]): WeekPlan {
+  const byKey = new Map(keys.map((key, index) => [key, created[index]]));
+  return {
+    ...plan,
+    days: plan.days.map((day, dayIndex) => ({
+      ...day,
+      items: day.items.map((item, itemIndex) => {
+        const task = byKey.get(`${dayIndex}:${itemIndex}`);
+        return task ? { ...item, taskId: task.id } : item;
+      }),
+    })),
+  };
+}
 
 export function AssistantDock() {
   const {
@@ -17,12 +31,13 @@ export function AssistantDock() {
     error,
     context,
     send,
+    setPlan,
     stop,
     clear,
   } = useAssistant();
   const { aiStatus } = useStore();
   const [draft, setDraft] = useState("");
-  const [review, setReview] = useState<WeekPlan | null>(null);
+  const [review, setReview] = useState<{ plan: WeekPlan; messageId: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -191,7 +206,7 @@ export function AssistantDock() {
                         <button
                           type="button"
                           className="nm-btn nm-btn--secondary nm-btn--sm"
-                          onClick={() => setReview(message.plan ?? null)}
+                          onClick={() => setReview({ plan: message.plan!, messageId: message.id })}
                         >
                           Review plan
                           <i className="fa-solid fa-arrow-right" aria-hidden="true" />
@@ -262,7 +277,15 @@ export function AssistantDock() {
         </form>
         <p className="nm-help nm-assistant-foot">Elpis can make mistakes. Check the note.</p>
       </aside>
-      {review ? <PlanModal plan={review} onClose={() => setReview(null)} /> : null}
+      {review ? (
+        <PlanModal
+          plan={review.plan}
+          onClose={() => setReview(null)}
+          onCreated={(created, keys) =>
+            setPlan(review.messageId, withCreated(review.plan, created, keys))
+          }
+        />
+      ) : null}
     </>
   );
 }
