@@ -245,7 +245,7 @@ server you did not start.
 ## Deploy notes
 
 Cloud Run (`server/Dockerfile`, context `./server`, image
-`kaiden122/elysiaa-neoma-server`) serves the API at
+`kaiden122/neoma`, from `vars.APP_NAME`) serves the API at
 `https://neoma-api.web.app` and `/api/**` through the client host (Vercel).
 Firebase Hosting (`firebase.json`, `.firebaserc`; project `elysiaa-api`, site
 `neoma-api`) proxies `/api/**`, `/mcp`, `/docs`, `/docs/**`, `/redoc`,
