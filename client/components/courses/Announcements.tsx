@@ -19,9 +19,11 @@ interface AnnouncementsListProps {
   onMarkAll?: () => void;
 }
 
+const EXCERPT_LENGTH = 600;
+
 function excerpt(body: string): string {
   const text = body.trim();
-  return text.length > 320 ? `${text.slice(0, 319)}…` : text;
+  return text.length > EXCERPT_LENGTH ? `${text.slice(0, EXCERPT_LENGTH - 1)}…` : text;
 }
 
 export function AnnouncementsList({
@@ -129,13 +131,13 @@ export function AnnouncementsList({
                     {item.replies} repl{item.replies === 1 ? "y" : "ies"}
                   </span>
                 ) : null}
-                {item.body.length > 320 ? (
+                {item.body.length > EXCERPT_LENGTH ? (
                   <button
                     type="button"
                     className="nm-chip nm-chip--sm nm-chip--link"
                     onClick={() => setOpenId(open ? null : item.id)}
                   >
-                    {open ? "Show less" : "Read more"}
+                    {open ? "Show less" : "Read full announcement"}
                   </button>
                 ) : null}
                 <a

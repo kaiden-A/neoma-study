@@ -126,6 +126,11 @@ class MoodleAssignment(Base):
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cutoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     intro: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Files attached to the assignment description (Moodle's `introfiles`),
+    # kept compact so the course page can save them without another fetch.
+    attachments: Mapped[list] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
     submission_status: Mapped[str] = mapped_column(String(40), default="", nullable=False)
     status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     grade: Mapped[str] = mapped_column(String(50), default="", nullable=False)
@@ -150,7 +155,7 @@ class MoodleAnnouncement(Base):
 
     __tablename__ = "moodle_announcements"
     __table_args__ = (
-        UniqueConstraint("user_id", "discussion_id", name="uq_moodle_announcements_user_discussion"),
+        UniqueConstraint("user_id", "post_id", name="uq_moodle_announcements_user_post"),
         Index("ix_moodle_announcements_user_posted", "user_id", "posted_at"),
         Index("ix_moodle_announcements_course_posted", "course_id", "posted_at"),
         Index("ix_moodle_announcements_user_read", "user_id", "read_at"),
@@ -164,7 +169,11 @@ class MoodleAnnouncement(Base):
         Uuid, ForeignKey("moodle_courses.id", ondelete="CASCADE"), index=True, nullable=False
     )
     forum_id: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    discussion_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # `mod_forum_get_forum_discussions` returns the first post, not the
+    # discussion: `id` is the post id and `discussion` is the thread id.
+    # post_id is the stable identity; discussion_id builds the deep link.
+    post_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    discussion_id: Mapped[int | None] = mapped_column(BigInteger)
     forum_name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
     forum_type: Mapped[str] = mapped_column(String(40), default="", nullable=False)
     subject: Mapped[str] = mapped_column(String(300), default="", nullable=False)

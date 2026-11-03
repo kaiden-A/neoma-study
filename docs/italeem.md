@@ -34,7 +34,7 @@ Moodle 5.2-era core (`2026042000.02`).
 |---|---|
 | `core_webservice_get_site_info` | validates the token; stores `release` + `functions` |
 | `core_enrol_get_users_courses` | `moodle_courses` + one vault folder per course |
-| `mod_assign_get_assignments` | `moodle_assignments` + tasks (`assign:<id>`) |
+| `mod_assign_get_assignments` | `moodle_assignments` + tasks (`assign:<id>`); description attachments (`introfiles`) for "Save to vault" |
 | `core_calendar_get_action_events_by_timesort` | quiz/other closes as tasks (`italeem-event:<id>`) |
 | `core_course_get_contents` | cached outline, fetched lazily per course |
 | `gradereport_user_get_grade_items` | cached grades tab |
@@ -65,12 +65,15 @@ skipped) so a deadline never appears twice. Quiz `close` events become tasks;
 
 ## Files
 
-`POST /api/moodle/courses/{id}/save` takes `{cmid, fileIndex}`. The server
-looks the URL up in the **cached outline** — it never accepts a URL from the
-client — appends the token, caps the download at 50 MB, stores the bytes in R2
-and creates a personal note in the course folder. `extract_services` then makes
-PDFs/decks/docs searchable ("found in file · page N") and the note opens in the
-existing PDF/Office viewers, study reader and flashcard flow.
+`POST /api/moodle/courses/{id}/save` takes `{cmid, fileIndex}` for an activity
+file or `{assignId, fileIndex}` for an assignment description attachment. The
+server looks the URL up in the **cached outline** or the mirrored assignment
+row — it never accepts a URL from the client — appends the token, caps the
+download at 50 MB, stores the bytes in R2 and creates a personal note in the
+course folder. `extract_services` then makes PDFs/decks/docs searchable ("found
+in file · page N") and the note opens in the existing PDF/Office viewers, study
+reader and flashcard flow. The response carries the full note, so the vault
+updates without a second request.
 
 Saved copies are not replaced automatically when the Moodle file changes: a new
 PDF version would invalidate page-anchored highlights. Save again to make a
@@ -147,9 +150,12 @@ the run count as users are added.
 
 Forum discussions are mirrored into `moodle_announcements` as plain text:
 subject, body, author, posted date, reply count, forum name/type, the original
-iTa'leem discussion URL and `read_at`. The unique key is
-`(user_id, discussion_id)`, so a scheduled scan or a course-tab refresh upserts
-the same row without duplicating it.
+iTa'leem discussion URL and `read_at`. `mod_forum_get_forum_discussions` returns
+the **first post**: its `id` is the post id (the unique key) and its
+`discussion` field is the thread id used for the deep link. The body keeps the
+full text (100k characters) and in-text links as `text (url)`. The unique key
+is `(user_id, post_id)`, so a scheduled scan or a course-tab refresh upserts the
+same row without duplicating it.
 
 The UI has a fourth tab on each course page and a global inbox at
 `/courses/announcements`, plus a latest strip on `/courses`. The tab refreshes

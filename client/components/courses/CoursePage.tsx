@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/bits";
 import { useOverlays } from "@/components/ui/Overlays";
 import { fmtBytes, fmtDay, fmtRelative } from "@/lib/dates";
 import { useStore } from "@/lib/store";
-import type { CourseDetail, CourseModule, CourseSection } from "@/lib/types";
+import type { CourseAssignment, CourseDetail, CourseModule, CourseSection } from "@/lib/types";
 
 type Tab = "outline" | "assignments" | "announcements" | "grades";
 
@@ -62,6 +62,7 @@ export function CoursePage({
   const { toast } = useOverlays();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [busy, setBusy] = useState<number | null>(null);
+  const [assignmentBusy, setAssignmentBusy] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loaded = useRef(false);
@@ -144,12 +145,24 @@ export function CoursePage({
   async function save(module: CourseModule, index: number) {
     setBusy(module.cmid);
     try {
-      const note = await store.saveCourseFile(courseId, module.cmid, index);
+      const note = await store.saveCourseFile(courseId, { cmid: module.cmid }, index);
       toast(`Saved “${note.title}” to your vault`, { kind: "success" });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : "Could not save that file.", { kind: "danger" });
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function saveAssignment(assignment: CourseAssignment, index: number) {
+    setAssignmentBusy(assignment.assignId);
+    try {
+      const note = await store.saveCourseFile(courseId, { assignId: assignment.assignId }, index);
+      toast(`Saved “${note.title}” to your vault`, { kind: "success" });
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not save that file.", { kind: "danger" });
+    } finally {
+      setAssignmentBusy(null);
     }
   }
 
@@ -275,7 +288,7 @@ export function CoursePage({
       {tab === "outline" ? (
         <Outline sections={detail.sections} busy={busy} onSave={save} />
       ) : tab === "assignments" ? (
-        <Assignments detail={detail} />
+        <Assignments detail={detail} busy={assignmentBusy} onSave={saveAssignment} />
       ) : tab === "announcements" ? (
         <AnnouncementsList
           items={announcements}
@@ -396,7 +409,15 @@ function Outline({
   );
 }
 
-function Assignments({ detail }: { detail: CourseDetail }) {
+function Assignments({
+  detail,
+  busy,
+  onSave,
+}: {
+  detail: CourseDetail;
+  busy: number | null;
+  onSave: (assignment: CourseAssignment, index: number) => void;
+}) {
   if (detail.assignments.length === 0) {
     return (
       <EmptyState
@@ -441,6 +462,33 @@ function Assignments({ detail }: { detail: CourseDetail }) {
                   : "No due date"}
                 {assignment.cutoffAt ? ` · cutoff ${fmtDay(assignment.cutoffAt)}` : ""}
               </p>
+              {assignment.files.map((file, index) => (
+                <div
+                  key={`${assignment.assignId}-${file.filename}`}
+                  className="mt-2 flex flex-wrap items-center gap-2"
+                >
+                  <i className="fa-solid fa-paperclip nm-meta" aria-hidden="true" />
+                  <span className="nm-meta">
+                    {file.filename} · {fmtBytes(file.size)}
+                  </span>
+                  {file.noteId ? (
+                    <Link className="nm-chip nm-chip--sm nm-chip--ok" href={`/vault/${file.noteId}`}>
+                      <i className="fa-solid fa-check" aria-hidden="true" />
+                      In vault
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      className="nm-chip nm-chip--sm nm-chip--link"
+                      onClick={() => onSave(assignment, index)}
+                      disabled={busy === assignment.assignId}
+                    >
+                      <i className="fa-solid fa-download" aria-hidden="true" />
+                      {busy === assignment.assignId ? "Saving…" : "Save to vault"}
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
             {assignment.taskId ? (
               <Link className="nm-chip nm-chip--sm nm-chip--link" href="/tasks">

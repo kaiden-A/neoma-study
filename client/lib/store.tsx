@@ -174,7 +174,11 @@ interface StoreValue {
   connectMoodle: (link: string) => Promise<MoodleStatus>;
   syncMoodle: () => Promise<MoodleSyncResult>;
   disconnectMoodle: () => Promise<void>;
-  saveCourseFile: (courseId: string, cmid: number, fileIndex?: number) => Promise<Note>;
+  saveCourseFile: (
+    courseId: string,
+    source: { cmid?: number; assignId?: number },
+    fileIndex?: number,
+  ) => Promise<Note>;
   userById: (id: string) => MemberUser | null;
   userName: (id: string | null | undefined) => string;
   membersOf: (groupId: string) => MemberUser[];
@@ -921,16 +925,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setAnnouncementMeta({});
         await refresh();
       },
-      saveCourseFile: async (courseId, cmid, fileIndex = 0) => {
-        const saved = await apiPost<{ noteId: string; title: string; fileId: string; size: number }>(
+      saveCourseFile: async (courseId, source, fileIndex = 0) => {
+        const saved = await apiPost<{ noteId: string; title: string; note: Note }>(
           `/api/moodle/courses/${courseId}/save`,
-          { cmid, fileIndex },
+          { ...source, fileIndex },
         );
-        const note = await apiGet<Note>(`/api/notes/${saved.noteId}`);
-        replaceNote(note);
-        const detail = await apiGet<CourseDetail>(`/api/moodle/courses/${courseId}`);
-        setCourseDetails((current) => ({ ...current, [courseId]: detail }));
-        return note;
+        replaceNote(saved.note);
+        try {
+          const detail = await apiGet<CourseDetail>(`/api/moodle/courses/${courseId}`);
+          setCourseDetails((current) => ({ ...current, [courseId]: detail }));
+        } catch {
+          // The note is saved; refreshing the course card is best-effort.
+        }
+        return saved.note;
       },
       userById,
       userName,

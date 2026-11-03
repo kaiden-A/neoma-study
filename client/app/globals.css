@@ -946,7 +946,7 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-announcement.is-unread { border-color: color-mix(in srgb, var(--mark-coral) 35%, var(--rule)); }
 .nm-announcement.is-focused { outline: 2px solid color-mix(in srgb, var(--mark-sky) 65%, transparent); outline-offset: 2px; }
 .nm-announcement-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--mark-coral); margin-top: 0.5rem; flex: none; }
-.nm-announcement-body { margin: 0.55rem 0 0; font-size: 0.9rem; line-height: 1.6; color: var(--ink-muted); white-space: pre-line; }
+.nm-announcement-body { margin: 0.55rem 0 0; font-size: 0.9rem; line-height: 1.6; color: var(--ink-muted); white-space: pre-line; overflow-wrap: anywhere; }
 .nm-announcement-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); min-width: 0; }
 .nm-announcement-strip:last-child { border-bottom: 0; }
 .nm-announcement-strip-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

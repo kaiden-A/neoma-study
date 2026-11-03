@@ -719,6 +719,7 @@ def _course(
         MoodleAnnouncement(
             user_id=user.id,
             course_id=course.id,
+            post_id=410,
             discussion_id=410,
             subject="Lab moved to Thursday",
             author="Dr Aisyah",

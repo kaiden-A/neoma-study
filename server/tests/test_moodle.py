@@ -108,6 +108,7 @@ class FakeMoodle:
             11: [
                 {
                     "id": 31,
+                    "discussion": 77,
                     "name": "Hybrid week",
                     "message": "<p>Classes are online this week.</p>",
                     "userid": 9,
@@ -183,6 +184,19 @@ class FakeMoodle:
                                     "cutoffdate": 0,
                                     "intro": "<p>Read the case</p>",
                                     "timemodified": _now(-1),
+                                    "introfiles": [
+                                        {
+                                            "filename": "case.pdf",
+                                            "filepath": "/",
+                                            "filesize": 20,
+                                            "fileurl": (
+                                                "https://italeemc.iium.edu.my/webservice/pluginfile.php/"
+                                                "1/mod_assign/intro/0/case.pdf"
+                                            ),
+                                            "mimetype": "application/pdf",
+                                            "timemodified": _now(-1),
+                                        }
+                                    ],
                                 }
                             ],
                         }
@@ -393,10 +407,13 @@ def test_course_detail_and_save_to_vault(
     assert body["sections"][0]["name"] == "Week 1"
     assert body["sections"][0]["modules"][1]["files"][0]["filename"] == "week1.txt"
     assert body["assignments"][0]["name"] == "Case brief"
+    assert body["assignments"][0]["files"][0]["filename"] == "case.pdf"
+    assert body["assignments"][0]["files"][0]["noteId"] is None
 
     saved = client.post(f"/api/moodle/courses/{course_id}/save", json={"cmid": 9003, "fileIndex": 0})
     assert saved.status_code == 201, saved.text
     note_id = saved.json()["noteId"]
+    assert saved.json()["note"]["id"] == note_id
 
     db.expire_all()
     note = db.get(Note, note_id)
@@ -413,6 +430,52 @@ def test_course_detail_and_save_to_vault(
     assert again.status_code == 201
     assert again.json()["noteId"] == note_id
     assert len(fake.downloads) == downloads
+
+
+def test_saves_assignment_attachment_to_vault(
+    client: TestClient,
+    db: DbSession,
+    make_user,
+    sign_in,
+    monkeypatch,
+    storage,
+) -> None:
+    user = make_user(db)
+    sign_in(user)
+    fake = FakeMoodle()
+    install(monkeypatch, fake)
+    assert client.post("/api/moodle/token", json={"link": _link()}).status_code == 200
+    course_id = client.get("/api/moodle/courses").json()[0]["id"]
+
+    saved = client.post(
+        f"/api/moodle/courses/{course_id}/save",
+        json={"assignId": 500, "fileIndex": 0},
+    )
+    assert saved.status_code == 201, saved.text
+    payload = saved.json()
+    assert payload["title"] == "case"
+    assert payload["note"]["fileName"] == "case.pdf"
+    assert payload["noteId"] == payload["note"]["id"]
+
+    detail = client.get(f"/api/moodle/courses/{course_id}").json()
+    assert detail["assignments"][0]["files"][0]["noteId"] == payload["noteId"]
+
+    # A retry returns the same note instead of copying the bytes again.
+    again = client.post(
+        f"/api/moodle/courses/{course_id}/save",
+        json={"assignId": 500, "fileIndex": 0},
+    )
+    assert again.status_code == 201
+    assert again.json()["noteId"] == payload["noteId"]
+
+    missing = client.post(
+        f"/api/moodle/courses/{course_id}/save",
+        json={"assignId": 500, "fileIndex": 9},
+    )
+    assert missing.status_code == 404
+
+    no_source = client.post(f"/api/moodle/courses/{course_id}/save", json={"fileIndex": 0})
+    assert no_source.status_code == 422
 
 
 def test_assignments_refresh_submission_status(
@@ -636,7 +699,9 @@ def test_announcements_mirror_and_read_state(
     assert rows[0].subject == "Hybrid week"
     assert "Classes are online" in rows[0].body
     assert rows[0].read_at is not None  # first scan baselines existing announcements
-    assert rows[0].url.endswith("/mod/forum/discuss.php?d=31")
+    assert rows[0].post_id == 31
+    assert rows[0].discussion_id == 77
+    assert rows[0].url.endswith("/mod/forum/discuss.php?d=77")
 
     course_id = client.get("/api/moodle/courses").json()[0]["id"]
     response = client.get(f"/api/moodle/courses/{course_id}/announcements")

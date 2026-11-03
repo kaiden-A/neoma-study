@@ -334,6 +334,7 @@ export interface CourseAssignment {
   grade: string;
   gradeMax: string;
   url: string;
+  files: CourseFile[];
 }
 
 export interface CourseGrade {

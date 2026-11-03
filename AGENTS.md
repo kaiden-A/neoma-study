@@ -214,12 +214,16 @@ server you did not start.
   (`services/crypto.py`, purpose `moodle`) and never reaches the client.
   Imported tasks use `tasks.external_uid` (`assign:`/`italeem-event:`) and
   `tasks.course_id`; editing or deleting detaches the row and records the UID in
-  `moodle_accounts.ignored_uids` so a sync cannot resurrect it. Course files are
-  copied into R2/vault on demand (`POST /api/moodle/courses/{id}/save`), then the
-  normal note/extraction/search/viewer path applies. `mcp_italeem.py` adds the
-  `italeem_*` MCP tools. Read-only: never submit, post or message.
-  Forum discussions are mirrored into `moodle_announcements` (plain text,
-  `read_at`); the course page has an Announcements tab and
+  `moodle_accounts.ignored_uids` so a sync cannot resurrect it. Course files and
+  assignment description attachments (`mod_assign_get_assignments.introfiles`)
+  are copied into R2/vault on demand (`POST /api/moodle/courses/{id}/save` with
+  `cmid` or `assignId`), then the normal note/extraction/search/viewer path
+  applies. `mcp_italeem.py` adds the `italeem_*` MCP tools. Read-only: never
+  submit, post or message.
+  Forum discussions are mirrored into `moodle_announcements` (full plain text
+  with links, `read_at`). `mod_forum_get_forum_discussions` returns the first
+  post: `id` is the post id (the unique key) and `discussion` is the thread id
+  used for deep links. The course page has an Announcements tab and
   `/courses/announcements` is the global inbox. The email deep-links into that
   tab; replies stay in iTa'leem because IIUM's post endpoint is unreliable.
   The maintenance sync (`POST /api/maintenance/sync-moodle?notify=true`) also

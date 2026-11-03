@@ -321,6 +321,11 @@ def italeem_assignment(
             "submission": assignment.submission_status if assignment else "",
             "grade": assignment.grade if assignment else "",
             "gradeMax": assignment.grade_max if assignment else "",
+            "files": (
+                [item.model_dump() for item in moodle_services.assignment_files(db, user, assignment)]
+                if assignment
+                else []
+            ),
             "cutoffAt": (
                 int(assignment.cutoff_at.timestamp() * 1000)
                 if assignment and assignment.cutoff_at
@@ -385,10 +390,13 @@ def italeem_sync() -> dict:
 @mcp.tool(annotations=MUTATING)
 def italeem_save_file(
     course_id: CourseId,
-    cmid: Annotated[int, Field(description="The activity cmid from italeem_course/files.")],
-    file_index: Annotated[int, Field(ge=0, le=50, description="Index in that activity's files.")] = 0,
+    cmid: Annotated[int | None, Field(description="The activity cmid from italeem_course/files.")] = None,
+    assign_id: Annotated[int | None, Field(description="An assignment id from italeem_assignment.")] = None,
+    file_index: Annotated[int, Field(ge=0, le=50, description="Index in that item's files.")] = 0,
 ) -> dict:
-    """Save a course file into the member's vault as a note (PDFs, decks, docs)."""
+    """Save a course file or an assignment attachment into the vault as a note."""
+    if (cmid is None) == (assign_id is None):
+        raise ToolError("Give either cmid or assign_id.")
     with get_session() as db:
         user = current_user(db)
         _account(db, user)
@@ -398,6 +406,7 @@ def italeem_save_file(
                 user,
                 _course_id(course_id),
                 cmid=cmid,
+                assign_id=assign_id,
                 file_index=file_index,
                 storage=get_storage(),
             )

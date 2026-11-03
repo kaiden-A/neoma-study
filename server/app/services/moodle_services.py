@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from ..config import get_settings
@@ -62,6 +63,7 @@ from . import (
     google_services,
     note_services,
     settings_services,
+    storage_services,
 )
 from .errors import InvalidError, NotFoundError, UnavailableError
 
@@ -83,6 +85,9 @@ COURSE_COLORS = ("amber", "mint", "sky", "coral", "violet", "pink")
 UPDATES_LOOKBACK_DAYS = 180
 FORUM_DISCUSSION_LIMIT = 30
 SEEN_LIMIT = 2000
+ANNOUNCEMENT_BODY_LIMIT = 100_000
+ATTACHMENT_LIMIT = 30
+
 
 MISSING_COURSE = "We could not find that iTa'leem course."
 NOT_CONNECTED = "Connect iTa'leem first: Settings → iTa'leem."
@@ -321,17 +326,32 @@ class _TextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self._link: str | None = None
+        self._link_text: list[str] = []
 
     def handle_data(self, data: str) -> None:
         self.parts.append(data)
+        if self._link is not None:
+            self._link_text.append(data)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in self.BLOCK:
             self.parts.append("\n")
+        elif tag == "a":
+            href = dict(attrs).get("href") or ""
+            if href.startswith(("http://", "https://")):
+                self._link = href
+                self._link_text = []
 
     def handle_endtag(self, tag: str) -> None:
         if tag in self.BLOCK:
             self.parts.append("\n")
+        elif tag == "a" and self._link is not None:
+            text = "".join(self._link_text).strip()
+            if self._link not in text:
+                self.parts.append(f" ({self._link})")
+            self._link = None
+            self._link_text = []
 
 
 def html_to_text(value: str | None, limit: int = 5000) -> str:
@@ -575,6 +595,31 @@ def _upsert_task(
     return task
 
 
+def _attachment_rows(raw: Any) -> list[dict]:
+    """Compact `introfiles` so the course page can save them later."""
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("fileurl") or "")[:2000]
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        rows.append(
+            {
+                "filename": str(item.get("filename") or "file")[:300],
+                "mimetype": str(item.get("mimetype") or "application/octet-stream")[:160],
+                "size": int(item.get("filesize") or 0),
+                "url": url,
+                "modified": int(item.get("timemodified") or 0),
+            }
+        )
+        if len(rows) >= ATTACHMENT_LIMIT:
+            break
+    return rows
+
+
 def _sync_assignments(
     db: DbSession,
     user: User,
@@ -608,6 +653,7 @@ def _sync_assignments(
             row.due_at = _moment(raw.get("duedate"))
             row.cutoff_at = _moment(raw.get("cutoffdate"))
             row.intro = html_to_text(raw.get("intro") or "", 20000)
+            row.attachments = _attachment_rows(raw.get("introfiles") or raw.get("introattachments"))
             row.timemodified = _moment(raw.get("timemodified"))
             row.last_seen_at = now
             uid = f"assign:{assign_id}"
@@ -948,12 +994,33 @@ def _collect_deadlines(
             items.append(_deadline_item(task, course))
 
 
+def _post_id(discussion: dict) -> int:
+    """The first post's id (Moodle's `id` field)."""
+    try:
+        return int(discussion.get("id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _discussion_id(discussion: dict) -> int:
+    """The thread id (Moodle's `discussion` field, `id` in older payloads)."""
+    for key in ("discussion", "discussionid", "id"):
+        try:
+            value = int(discussion.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value:
+            return value
+    return 0
+
+
 def _forum_item(
     forum: dict,
     course: MoodleCourse,
     discussion: dict,
 ) -> email_services.ItaleemItem:
-    discussion_id = int(discussion.get("id") or 0)
+    post_id = _post_id(discussion)
+    discussion_id = _discussion_id(discussion)
     is_news = str(forum.get("type") or "") == "news"
     parts = [
         course.shortname or course.fullname,
@@ -965,7 +1032,7 @@ def _forum_item(
     if excerpt:
         body = f"{body} — {excerpt}" if body else excerpt
     return {
-        "key": f"forum:{discussion_id}",
+        "key": f"forum:{post_id}",
         "group": "Announcements" if is_news else "Forum posts",
         "title": str(discussion.get("name") or discussion.get("subject") or "iTa'leem post")[:300],
         "body": body,
@@ -1008,7 +1075,8 @@ def _forum_reply_item(
     account: MoodleAccount,
     functions: set[str],
 ) -> email_services.ItaleemItem:
-    discussion_id = int(discussion.get("id") or 0)
+    post_id = _post_id(discussion)
+    discussion_id = _discussion_id(discussion)
     replies = int(discussion.get("numreplies") or 0)
     is_news = str(forum.get("type") or "") == "news"
     subject = str(discussion.get("name") or discussion.get("subject") or "forum post")[:280]
@@ -1021,7 +1089,7 @@ def _forum_reply_item(
     if replies:
         body = f"{body} · {replies} repl{'y' if replies == 1 else 'ies'}"
     return {
-        "key": f"forum-reply:{discussion_id}:{replies}",
+        "key": f"forum-reply:{post_id}:{replies}",
         "group": "Announcements" if is_news else "Forum posts",
         "title": f"New reply in {subject}",
         "body": body,
@@ -1087,33 +1155,33 @@ def _collect_forums(
 
         if forum_id not in state.forum_ready:
             for discussion in discussions:
-                discussion_id = str(discussion.get("id") or "")
-                if discussion_id:
-                    state.forums[discussion_id] = _forum_state(discussion)
+                post_id = str(_post_id(discussion) or "")
+                if post_id:
+                    state.forums[post_id] = _forum_state(discussion)
             state.forum_ready.add(forum_id)
             continue
 
         for discussion in discussions:
-            discussion_id = str(discussion.get("id") or "")
-            if not discussion_id:
+            post_id = str(_post_id(discussion) or "")
+            if not post_id:
                 continue
-            old = state.forums.get(discussion_id)
+            old = state.forums.get(post_id)
             replies = int(discussion.get("numreplies") or 0)
             modified = int(discussion.get("timemodified") or discussion.get("modified") or 0)
             if old is None:
                 author = int(discussion.get("userid") or 0)
                 if not me or author != me:
                     items.append(_forum_item(forum, course, discussion))
-                state.forums[discussion_id] = _forum_state(discussion)
+                state.forums[post_id] = _forum_state(discussion)
                 continue
             if replies > int(old.get("replies") or 0):
                 editor = int(discussion.get("usermodified") or 0)
                 if not me or editor != me:
                     items.append(_forum_reply_item(api, forum, course, discussion, account, functions))
-                state.forums[discussion_id] = _forum_state(discussion)
+                state.forums[post_id] = _forum_state(discussion)
             elif modified != int(old.get("modified") or 0):
                 # An edit to an existing post: remember it, do not email.
-                state.forums[discussion_id] = _forum_state(discussion)
+                state.forums[post_id] = _forum_state(discussion)
 
 
 def _outline_files(account: MoodleAccount, outline: list[dict]) -> dict[str, tuple[str, str]]:
@@ -1443,25 +1511,24 @@ def _upsert_announcements(
     forum_type = str(forum.get("type") or "")[:40]
     values: list[dict] = []
     for discussion in discussions:
-        try:
-            discussion_id = int(discussion.get("id") or 0)
-        except (TypeError, ValueError):
+        post_id = _post_id(discussion)
+        if not post_id:
             continue
-        if not discussion_id:
-            continue
+        discussion_id = _discussion_id(discussion) or post_id
         values.append(
             {
                 "id": uuid.uuid4(),
                 "user_id": user.id,
                 "course_id": course.id,
                 "forum_id": forum_id,
+                "post_id": post_id,
                 "discussion_id": discussion_id,
                 "forum_name": forum_name,
                 "forum_type": forum_type,
                 "subject": str(
                     discussion.get("name") or discussion.get("subject") or "iTa'leem announcement"
                 )[:300],
-                "body": html_to_text(str(discussion.get("message") or ""), 20000),
+                "body": html_to_text(str(discussion.get("message") or ""), ANNOUNCEMENT_BODY_LIMIT),
                 "author": str(discussion.get("userfullname") or "")[:200],
                 "posted_at": _moment(discussion.get("created")),
                 "modified_at": _moment(discussion.get("timemodified") or discussion.get("modified")),
@@ -1485,10 +1552,11 @@ def _upsert_announcements(
     statement = pg_insert(MoodleAnnouncement).values(values)
     db.execute(
         statement.on_conflict_do_update(
-            index_elements=["user_id", "discussion_id"],
+            index_elements=["user_id", "post_id"],
             set_={
                 "course_id": statement.excluded.course_id,
                 "forum_id": statement.excluded.forum_id,
+                "discussion_id": statement.excluded.discussion_id,
                 "forum_name": statement.excluded.forum_name,
                 "forum_type": statement.excluded.forum_type,
                 "subject": statement.excluded.subject,
@@ -1512,7 +1580,7 @@ def _announcement_out(row: MoodleAnnouncement, course: MoodleCourse) -> Announce
         courseColor=_color(course.course_id),
         forumName=row.forum_name,
         forumType=row.forum_type,
-        discussionId=row.discussion_id,
+        discussionId=row.discussion_id or row.post_id,
         subject=row.subject or "iTa'leem announcement",
         body=row.body,
         author=row.author,
@@ -1646,7 +1714,13 @@ def refresh_course_announcements(db: DbSession, user: User, course: MoodleCourse
 
 
 def announcements_for(
-    db: DbSession, user: User, course: MoodleCourse, *, refresh: bool = False
+    db: DbSession,
+    user: User,
+    course: MoodleCourse,
+    *,
+    refresh: bool = False,
+    limit: int = 100,
+    offset: int = 0,
 ) -> AnnouncementsOut:
     stale = course.announcements_at is None or (
         utcnow() - (_aware(course.announcements_at) or utcnow()) >= ANNOUNCEMENTS_TTL
@@ -1654,7 +1728,7 @@ def announcements_for(
     warning = None
     if refresh or stale:
         warning = refresh_course_announcements(db, user, course)
-    items, unread, synced = _announcement_list(db, user, course_id=course.id)
+    items, unread, synced = _announcement_list(db, user, course_id=course.id, limit=limit, offset=offset)
     return AnnouncementsOut(items=items, unread=unread, syncedAt=synced, warning=warning)
 
 
@@ -1664,7 +1738,7 @@ def all_announcements(
     *,
     course_id: uuid.UUID | None = None,
     unread: bool = False,
-    limit: int = 50,
+    limit: int = 100,
     offset: int = 0,
 ) -> AnnouncementsOut:
     items, count, synced = _announcement_list(
@@ -1892,6 +1966,39 @@ def cached_grades(course: MoodleCourse) -> list[GradeOut]:
     return _grades(course)
 
 
+def _attachment_files(
+    account: MoodleAccount | None,
+    attachments: list[dict],
+    saved: dict[str, str],
+) -> list[ModuleFileOut]:
+    files: list[ModuleFileOut] = []
+    for item in attachments or []:
+        url = str(item.get("url") or "")
+        if not url:
+            continue
+        uid = _file_uid(account.moodle_user_id if account else None, url)
+        files.append(
+            ModuleFileOut(
+                filename=str(item.get("filename") or "file")[:300],
+                mimetype=str(item.get("mimetype") or "application/octet-stream")[:160],
+                size=int(item.get("size") or 0),
+                noteId=saved.get(uid),
+            )
+        )
+    return files
+
+
+def assignment_files(db: DbSession, user: User, assignment: MoodleAssignment) -> list[ModuleFileOut]:
+    """One assignment's attachments, with the vault note id when saved."""
+    account = account_for(db, user)
+    uids = {
+        _file_uid(account.moodle_user_id if account else None, str(item.get("url")))
+        for item in assignment.attachments or []
+        if item.get("url")
+    }
+    return _attachment_files(account, assignment.attachments or [], _saved_note_ids(db, user, uids))
+
+
 def assignments_for(db: DbSession, user: User, course: MoodleCourse) -> list[AssignmentOut]:
     rows = db.scalars(
         select(MoodleAssignment)
@@ -1900,6 +2007,13 @@ def assignments_for(db: DbSession, user: User, course: MoodleCourse) -> list[Ass
     ).all()
     account = account_for(db, user)
     wwwroot = (account.wwwroot if account else "") or MOODLE_WWWROOT
+    uids = {
+        _file_uid(account.moodle_user_id if account else None, str(item.get("url")))
+        for row in rows
+        for item in row.attachments or []
+        if item.get("url")
+    }
+    saved = _saved_note_ids(db, user, uids)
     return [
         AssignmentOut(
             taskId=str(row.task_id) if row.task_id else None,
@@ -1912,6 +2026,7 @@ def assignments_for(db: DbSession, user: User, course: MoodleCourse) -> list[Ass
             grade=row.grade,
             gradeMax=row.grade_max,
             url=_assignment_url(wwwroot, row.cmid),
+            files=_attachment_files(account, row.attachments or [], saved),
         )
         for row in rows
     ]
@@ -2009,20 +2124,7 @@ def _note_type(content_type: str, filename: str) -> NoteType:
     return NoteType.paper
 
 
-def save_file(
-    db: DbSession,
-    user: User,
-    course_id: uuid.UUID,
-    *,
-    cmid: int,
-    file_index: int,
-    storage: Any,
-) -> NoteOut:
-    course = require_course(db, user, course_id)
-    account = require_account(db, user)
-    outline_error = refresh_outline(db, user, course)
-    if not course.outline:
-        raise UnavailableError(outline_error or "iTa'leem could not load that course outline.")
+def _outline_file(course: MoodleCourse, cmid: int, file_index: int) -> tuple[dict, dict]:
     module = None
     for section in course.outline or []:
         for row in section.get("modules") or []:
@@ -2036,8 +2138,62 @@ def save_file(
     files = [row for row in module.get("contents") or [] if row.get("type") == "file" and row.get("fileurl")]
     if file_index >= len(files):
         raise NotFoundError("That file is no longer in the course.")
-    content = files[file_index]
-    fileurl = str(content["fileurl"])
+    return module, files[file_index]
+
+
+def _assignment_file(
+    db: DbSession, user: User, course: MoodleCourse, assign_id: int, file_index: int
+) -> tuple[MoodleAssignment, dict]:
+    row = db.scalar(
+        select(MoodleAssignment).where(
+            MoodleAssignment.user_id == user.id,
+            MoodleAssignment.course_id == course.id,
+            MoodleAssignment.assign_id == assign_id,
+        )
+    )
+    if row is None:
+        raise NotFoundError("That iTa'leem assignment is no longer in the course.")
+    attachments = list(row.attachments or [])
+    if file_index >= len(attachments):
+        raise NotFoundError("That file is no longer on the assignment.")
+    return row, attachments[file_index]
+
+
+def save_file(
+    db: DbSession,
+    user: User,
+    course_id: uuid.UUID,
+    *,
+    cmid: int | None = None,
+    assign_id: int | None = None,
+    file_index: int,
+    storage: Any,
+) -> NoteOut:
+    course = require_course(db, user, course_id)
+    account = require_account(db, user)
+
+    if assign_id is not None:
+        assignment, content = _assignment_file(db, user, course, assign_id, file_index)
+        fileurl = str(content.get("url") or "")
+        filename = str(content.get("filename") or assignment.name or "iTa'leem file")[:300]
+        description = assignment.intro
+        open_url = _assignment_url(account.wwwroot or MOODLE_WWWROOT, assignment.cmid)
+        fallback_title = assignment.name or "iTa'leem file"
+    else:
+        if cmid is None:
+            raise InvalidError("Choose a file to save.")
+        outline_error = refresh_outline(db, user, course)
+        if not course.outline:
+            raise UnavailableError(outline_error or "iTa'leem could not load that course outline.")
+        module, content = _outline_file(course, cmid, file_index)
+        fileurl = str(content.get("fileurl") or "")
+        filename = str(content.get("filename") or module.get("name") or "iTa'leem file")[:300]
+        description = _module_description(module)
+        open_url = str(module.get("url") or "")
+        fallback_title = str(module.get("name") or "iTa'leem file")
+
+    if not fileurl:
+        raise NotFoundError("That file is no longer in the course.")
     if urlparse(fileurl).hostname != urlparse(account.wwwroot or MOODLE_WWWROOT).hostname:
         raise InvalidError("That file is not hosted on iTa'leem.")
     uid = _file_uid(account.moodle_user_id, fileurl)
@@ -2055,10 +2211,13 @@ def save_file(
     if not data:
         raise UnavailableError("iTa'leem returned an empty file.")
 
-    filename = str(content.get("filename") or module.get("name") or "iTa'leem file")[:300]
     content_type = str(content.get("mimetype") or response_type or "application/octet-stream")[:160]
     key = file_services.file_key(f"users/{user.id}/{uuid.uuid4().hex}", filename)
-    storage.put(key, data, content_type)
+    try:
+        storage.put(key, data, content_type)
+    except storage_services.StorageError as exc:
+        log.warning("iTa'leem save failed for %s: %s", key, exc)
+        raise UnavailableError(str(exc)) from exc
     record = FileObject(
         owner_id=user.id,
         key=key,
@@ -2069,16 +2228,15 @@ def save_file(
     db.add(record)
     db.flush()
 
-    url = str(module.get("url") or "")
-    body = _module_description(module)
-    if url:
-        body = f"{body}\n\n[Open in iTa'leem]({url})".strip()
+    body = description
+    if open_url:
+        body = f"{body}\n\n[Open in iTa'leem]({open_url})".strip()
     note = Note(
         owner_id=user.id,
         scope=NoteScope.personal,
         subject_id=course.subject_id,
         type=_note_type(content_type, filename),
-        title=(filename.rsplit(".", 1)[0] or module.get("name") or "iTa'leem file")[:300],
+        title=(filename.rsplit(".", 1)[0] or fallback_title or "iTa'leem file")[:300],
         body=body[:20000],
         file_id=record.id,
         external_uid=uid,
@@ -2086,7 +2244,16 @@ def save_file(
         created_by=user.id,
     )
     db.add(note)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two saves of the same iTa'leem file raced; the unique external_uid
+        # already points at the winner, so hand that note back instead of a 500.
+        db.rollback()
+        existing = db.scalar(select(Note).where(Note.owner_id == user.id, Note.external_uid == uid))
+        if existing is not None:
+            return note_services.note_out(db, existing)
+        raise
     db.refresh(note)
     extract_services.extract_file_text(db, storage, record)
     return note_services.note_out(db, note)

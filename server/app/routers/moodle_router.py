@@ -75,7 +75,7 @@ def disconnect(user: User = Depends(require_user), db: DbSession = Depends(get_d
 def announcements(
     course_id: uuid.UUID | None = Query(default=None, alias="courseId"),
     unread: bool = Query(default=False),
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=100, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: User = Depends(require_user),
     db: DbSession = Depends(get_db),
@@ -136,6 +136,7 @@ def save_file(
         user,
         course_id,
         cmid=data.cmid,
+        assign_id=data.assignId,
         file_index=data.fileIndex,
         storage=storage,
     )
@@ -144,6 +145,7 @@ def save_file(
         title=note.title,
         fileId=note.fileId or "",
         size=note.fileSize or 0,
+        note=note,
     )
 
 
@@ -174,8 +176,10 @@ def assignments(
 def course_announcements(
     course_id: uuid.UUID,
     refresh: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     user: User = Depends(require_user),
     db: DbSession = Depends(get_db),
 ) -> AnnouncementsOut:
     course = moodle_services.require_course(db, user, course_id)
-    return moodle_services.announcements_for(db, user, course, refresh=refresh)
+    return moodle_services.announcements_for(db, user, course, refresh=refresh, limit=limit, offset=offset)

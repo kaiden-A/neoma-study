@@ -2,7 +2,9 @@
 
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from .notes import NoteOut
 
 
 class MoodleStatusOut(BaseModel):
@@ -79,6 +81,7 @@ class AssignmentOut(BaseModel):
     grade: str = ""
     gradeMax: str = ""
     url: str
+    files: list[ModuleFileOut] = Field(default_factory=list)
 
 
 class GradeOut(BaseModel):
@@ -137,8 +140,15 @@ class CourseDetailOut(BaseModel):
 
 
 class MoodleSaveIn(BaseModel):
-    cmid: int = Field(ge=0)
+    cmid: int | None = Field(default=None, ge=0)
+    assignId: int | None = Field(default=None, ge=0)
     fileIndex: int = Field(default=0, ge=0, le=50)
+
+    @model_validator(mode="after")
+    def _one_source(self) -> "MoodleSaveIn":
+        if (self.cmid is None) == (self.assignId is None):
+            raise ValueError("Choose either a course file or an assignment attachment.")
+        return self
 
 
 class MoodleSaveOut(BaseModel):
@@ -146,3 +156,4 @@ class MoodleSaveOut(BaseModel):
     title: str
     fileId: str
     size: int
+    note: NoteOut
