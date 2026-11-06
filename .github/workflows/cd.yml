@@ -57,9 +57,12 @@ jobs:
             echo "::error::The build did not report an image digest"
             exit 1
           fi
+          # Buildx emits an OCI image index when provenance is on. Ask for every
+          # media type we might have produced: a Docker-v2-only Accept header
+          # makes the mirror 404 even when the digest is already available.
           for attempt in $(seq 1 18); do
             code=$(curl -s -o /dev/null -w "%{http_code}" \
-              -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
               "https://mirror.gcr.io/v2/${image}/manifests/${digest}")
             if [ "$code" = "200" ]; then
               echo "Mirror is serving ${image}@${digest} (attempt ${attempt})"
