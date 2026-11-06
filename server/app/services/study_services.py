@@ -133,9 +133,12 @@ def _dashboard(
     sessions = list(db.scalars(select(StudySession).where(StudySession.user_id == user.id)).all())
 
     due_cards_by_subject: dict[str, int] = {}
-    due_note_ids = {str(card.note_id) for card in cards if not card.suspended and card.due_at <= now}
-    for note in notes:
-        if str(note.id) in due_note_ids and note.subject_id:
+    notes_by_id = {note.id: note for note in notes}
+    for card in cards:
+        if card.suspended or card.due_at > now:
+            continue
+        note = notes_by_id.get(card.note_id)
+        if note is not None and note.subject_id is not None:
             key = str(note.subject_id)
             due_cards_by_subject[key] = due_cards_by_subject.get(key, 0) + 1
 

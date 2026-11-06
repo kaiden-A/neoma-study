@@ -10,6 +10,7 @@ export function FolderCard({
   href,
   name,
   meta,
+  due = 0,
   color,
   variant = "folder",
   onMenu,
@@ -17,6 +18,7 @@ export function FolderCard({
   href: string;
   name: string;
   meta: string;
+  due?: number;
   color?: string | null;
   variant?: "folder" | "inbox";
   onMenu?: (event: React.MouseEvent<HTMLElement>) => void;
@@ -28,6 +30,11 @@ export function FolderCard({
           <FolderGlyph variant={variant} />
         </span>
         <span className="nm-foldercard-name">{name}</span>
+        {due > 0 ? (
+          <span className="nm-chip nm-chip--sm nm-chip--ok nm-foldercard-due">
+            {due} due
+          </span>
+        ) : null}
         <span className="nm-foldercard-meta">{meta}</span>
       </Link>
       {onMenu ? (

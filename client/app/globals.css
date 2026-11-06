@@ -1104,6 +1104,7 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-foldercard-glyph svg { display: block; width: 54px; height: 45px; }
 .nm-foldercard-name { font-weight: 600; font-size: 0.93rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nm-foldercard-meta { font-size: 0.78rem; color: var(--ink-muted); }
+.nm-foldercard-due { align-self: flex-start; }
 .nm-foldercard-menu { position: absolute; top: 8px; right: 8px; opacity: 0; }
 .nm-foldercard:hover .nm-foldercard-menu, .nm-foldercard-menu:focus-visible { opacity: 1; }
 .nm-foldercard--add {
@@ -1798,6 +1799,8 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-excerpts .nm-card-hd { display: flex; align-items: baseline; gap: 8px; }
 .nm-excerpts-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .nm-excerpt { border-left: 3px solid var(--mark-amber); padding: 2px 0 2px 10px; }
+.nm-excerpt.is-suspended { opacity: 0.62; }
+.nm-excerpt-note { display: flex; margin-bottom: 6px; }
 .nm-excerpt-quote { margin: 0 0 6px; font-size: 0.86rem; line-height: 1.5; }
 .nm-excerpt-actions { display: flex; align-items: center; gap: 6px; }
 
@@ -1983,6 +1986,13 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
 .nm-pdf-highlightbtn:hover { background: color-mix(in srgb, var(--ink) 88%, transparent); }
 
 /* ---------- review page ---------- */
+.nm-review-scope {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 4px; padding-bottom: 2px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.nm-review-scope::-webkit-scrollbar { display: none; }
+.nm-review-scope .nm-chip { flex: 0 0 auto; }
 .nm-review-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .nm-review-progress .nm-prog { flex: 1 1 auto; }
 .nm-review-progress .nm-meta { white-space: nowrap; }
@@ -2052,6 +2062,7 @@ a.nm-railcard:hover { border-color: var(--ink-muted); }
   font-weight: 600; flex: 1 1 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.nm-dash-review { white-space: nowrap; }
 .nm-continue {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 16px; margin-bottom: 16px;

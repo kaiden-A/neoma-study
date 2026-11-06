@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Progress } from "@/components/ui/bits";
 import { Modal } from "@/components/ui/Modal";
 import { fmtRelative } from "@/lib/dates";
@@ -27,26 +29,46 @@ export function StudyDashboard({ onClose }: { onClose: () => void }) {
 
       {subjects.length ? (
         <div className="nm-dash-list">
-          {subjects.map((subject) => (
-            <div key={subject.subjectId} className="nm-dash-row">
-              <div className="nm-dash-rowhd">
-                <span className={`nm-dot nm-mk-${subject.color}`} />
-                <span className="nm-dash-name">{subject.name}</span>
-                <span className="nm-mono nm-meta">{subject.minutesThisWeek}m</span>
+          {subjects.map((subject) => {
+            const totalCards = store.cardsForSubject(subject.subjectId).length;
+            return (
+              <div key={subject.subjectId} className="nm-dash-row">
+                <div className="nm-dash-rowhd">
+                  <span className={`nm-dot nm-mk-${subject.color}`} />
+                  <span className="nm-dash-name">{subject.name}</span>
+                  <span className="nm-mono nm-meta">{subject.minutesThisWeek}m</span>
+                  {subject.cardsDue > 0 ? (
+                    <Link
+                      className="nm-btn nm-btn--ghost nm-btn--sm nm-dash-review"
+                      href={`/review?subject=${encodeURIComponent(subject.subjectId)}`}
+                    >
+                      Review {subject.cardsDue} due
+                    </Link>
+                  ) : totalCards > 0 ? (
+                    <Link
+                      className="nm-btn nm-btn--ghost nm-btn--sm nm-dash-review"
+                      href={`/review?subject=${encodeURIComponent(subject.subjectId)}&view=deck`}
+                    >
+                      Open deck
+                    </Link>
+                  ) : null}
+                </div>
+                <Progress
+                  pct={Math.round((subject.minutesThisWeek / topMinutes) * 100)}
+                  markerKey={subject.color}
+                  label={`${subject.name}: minutes this week`}
+                />
+                <p className="nm-help">
+                  {subject.notes} item{subject.notes === 1 ? "" : "s"} · {subject.files} file
+                  {subject.files === 1 ? "" : "s"} · {subject.cardsDue} card
+                  {subject.cardsDue === 1 ? "" : "s"} due ·{" "}
+                  {subject.lastStudiedAt
+                    ? `last studied ${fmtRelative(subject.lastStudiedAt)}`
+                    : "not studied yet"}
+                </p>
               </div>
-              <Progress
-                pct={Math.round((subject.minutesThisWeek / topMinutes) * 100)}
-                markerKey={subject.color}
-                label={`${subject.name}: minutes this week`}
-              />
-              <p className="nm-help">
-                {subject.notes} item{subject.notes === 1 ? "" : "s"} · {subject.files} file
-                {subject.files === 1 ? "" : "s"} · {subject.cardsDue} card
-                {subject.cardsDue === 1 ? "" : "s"} due ·{" "}
-                {subject.lastStudiedAt ? `last studied ${fmtRelative(subject.lastStudiedAt)}` : "not studied yet"}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <p className="nm-help">Make a subject in the vault and it will show up here.</p>

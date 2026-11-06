@@ -132,6 +132,8 @@ export type TaskPatchInput = Partial<Omit<TaskCreateInput, "groupId">> & { group
  * once ready. `ready` is kept as a convenience alias for `status === "ready"`. */
 export type BootStatus = "loading" | "ready" | "error";
 
+type CardScope = string | "unsorted" | null;
+
 interface StoreValue {
   status: BootStatus;
   bootSlow: boolean;
@@ -192,7 +194,8 @@ interface StoreValue {
   eventsOnDay: (day: number | Date) => CalendarItem[];
   personalNotes: () => Note[];
   notesForGroup: (groupId: string) => Note[];
-  dueCards: (now?: number) => Flashcard[];
+  dueCards: (now?: number, scope?: CardScope) => Flashcard[];
+  cardsForSubject: (scope: CardScope) => Flashcard[];
   cardsForNote: (noteId: string) => Flashcard[];
   createCard: (input: FlashcardInput) => Promise<Flashcard>;
   generateCards: (
@@ -690,10 +693,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const notesForGroup = (groupId: string) =>
       notes.filter((note) => note.scope === "group" && note.groupId === groupId);
 
-    const dueCards = (now?: number) =>
-      flashcards
-        .filter((card) => !card.suspended && card.dueAt <= (now ?? Date.now()))
+    // A card lives in the folder of the note it was made from. Cards from
+    // group notes have no folder and are reviewed under "Unsorted".
+    const subjectByNote = new Map(notes.map((note) => [note.id, note.subjectId]));
+    const inScope = (noteId: string, scope: CardScope) => {
+      if (scope === null) return true;
+      const subjectId = subjectByNote.get(noteId) ?? null;
+      return scope === "unsorted" ? subjectId === null : subjectId === scope;
+    };
+    const dueCards = (now?: number, scope: CardScope = null) => {
+      const moment = now ?? Date.now();
+      return flashcards
+        .filter((card) => !card.suspended && card.dueAt <= moment && inScope(card.noteId, scope))
         .sort((a, b) => a.dueAt - b.dueAt);
+    };
+    const cardsForSubject = (scope: CardScope) =>
+      flashcards
+        .filter((card) => inScope(card.noteId, scope))
+        .sort(
+          (a, b) =>
+            Number(a.suspended) - Number(b.suspended) ||
+            a.dueAt - b.dueAt ||
+            a.createdAt - b.createdAt,
+        );
     const cardsForNote = (noteId: string) =>
       flashcards.filter((card) => card.noteId === noteId).sort((a, b) => a.dueAt - b.dueAt);
 
@@ -953,6 +975,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       personalNotes,
       notesForGroup,
       dueCards,
+      cardsForSubject,
       cardsForNote,
       saveSession: async (input) => {
         const session = await apiPost<StudySession>("/api/study/sessions", input);

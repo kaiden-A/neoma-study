@@ -206,6 +206,12 @@ One stop centre for studying:
       choice** toggle; without Elpis it fills wrong options from the other
       answers in the batch. `/review` renders the options, marks correct/wrong
       and grades `good`/`again` on Enter.
+- [x] Per-subject review + deck browser (6 Nov 2026): cards follow the folder
+      of their note, so `/review?subject=<id>` scopes the due queue and
+      `?view=deck` lists every card in that scope with suspend/resume and
+      delete. Folder header/tiles and the study dashboard link straight to
+      them; group-note cards sit under **Unsorted**. The dashboard's
+      `cardsDue` now counts cards rather than notes with due cards.
 
 ### 3.3 Progress & habit
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { FilePreview } from "@/components/notes/FilePreview";
+import { FlashcardRows } from "@/components/notes/FlashcardRows";
 import { GenerateCardsModal } from "@/components/notes/GenerateCardsModal";
 import { GenerateQuizModal } from "@/components/notes/GenerateQuizModal";
 import { HandwritingSheet } from "@/components/notes/HandwritingSheet";
@@ -35,7 +36,6 @@ import {
 } from "@/lib/studyView";
 import type { NoteStudy, StudyHighlight, StudyPosition } from "@/lib/types";
 import { useIsPhone, useMediaQuery } from "@/lib/useMediaQuery";
-import { useNow } from "@/lib/useNow";
 
 interface Baseline {
   title: string;
@@ -97,7 +97,6 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const seekCounter = useRef(0);
 
   const { toast } = useOverlays();
-  const now = useNow(30_000);
 
   const study = useSyncExternalStore(subscribeStudyView, getStudyView, getServerStudyView);
   const isFocus = useMediaQuery("(min-width: 1081px)");
@@ -635,34 +634,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
         </div>
       </div>
       {cards.length ? (
-        <ul className="nm-excerpts-list">
-          {cards.map((card) => (
-            <li key={card.id} className="nm-excerpt">
-              <p className="nm-excerpt-quote">{card.front}</p>
-              {card.back ? <p className="nm-meta">{card.back}</p> : null}
-              <div className="nm-excerpt-actions">
-                <span className="nm-mono nm-meta">
-                  {card.suspended ? "Suspended" : card.dueAt <= now ? "Due now" : `Due ${fmtRelative(card.dueAt)}`}
-                </span>
-                <button
-                  type="button"
-                  className="nm-btn nm-btn--ghost nm-btn--sm"
-                  onClick={() => void store.updateCard(card.id, { suspended: !card.suspended }).catch(() => {})}
-                >
-                  {card.suspended ? "Resume" : "Suspend"}
-                </button>
-                <button
-                  type="button"
-                  className="nm-iconbtn nm-iconbtn--sm ml-auto"
-                  aria-label="Delete card"
-                  onClick={() => void store.deleteCard(card.id).catch(() => {})}
-                >
-                  <i className="fa-solid fa-trash" aria-hidden="true" />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <FlashcardRows cards={cards} />
       ) : (
         <p className="nm-help">
           Cards made from this note are reviewed on the Review page. Generate a set from the note text, or

@@ -178,6 +178,10 @@ server you did not start.
   nav badge; `services/study_services.py` derives the dashboard, weekly minutes,
   streak and "Continue studying" (`/api/study/*`, included in bootstrap). The
   derived `review_due:{user}` notification feeds the digest too.
+  Cards are scoped by the folder of their note: `/review?subject=<id>` filters
+  the due queue and `?view=deck` browses every card in scope (suspend/delete).
+  Group-note cards live under "Unsorted"; the vault folder header/tiles and the
+  study dashboard link into those URLs.
 - Quizzes: `services/quiz_services.py` + `services/quizgen.py` (pure rules)
   turn a note into multiple-choice, true/false and short-answer questions.
   `quizzes.questions` and `quiz_attempts.answers` are JSONB; generation never

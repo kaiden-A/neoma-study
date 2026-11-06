@@ -17,6 +17,7 @@ import { useOverlays } from "@/components/ui/Overlays";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
 import { useIsPhone } from "@/lib/useMediaQuery";
+import { useNow } from "@/lib/useNow";
 import { getServerVaultView, getVaultView, setVaultView, subscribeVaultView, type VaultView } from "@/lib/vaultView";
 
 type FilterId = "all" | "notes" | "files" | "links";
@@ -61,6 +62,7 @@ export default function VaultPage() {
   const [moveTo, setMoveTo] = useState("");
   const view = useSyncExternalStore(subscribeVaultView, getVaultView, getServerVaultView);
   const isPhone = useIsPhone();
+  const now = useNow(60_000);
   // Rows are the only layout that works on a phone; a grid preference saved on
   // a desktop must not turn phones into one giant card per row.
   const effectiveView: VaultView = isPhone ? "list" : view;
@@ -123,6 +125,10 @@ export default function VaultPage() {
   };
 
   const selectedFolder = subjectId === null || subjectId === "unsorted" ? null : store.subjectById(subjectId);
+  const folderScope: string | "unsorted" | null =
+    listing === "folder" ? subjectId : listing === "unsorted" ? "unsorted" : null;
+  const folderDue = folderScope ? store.dueCards(now, folderScope).length : 0;
+  const folderCards = folderScope ? store.cardsForSubject(folderScope).length : 0;
   const unsortedCount = notes.filter((note) => note.subjectId === null).length;
   const folderName =
     listing === "folder" ? (selectedFolder?.name ?? "Folder") : listing === "unsorted" ? "Unsorted" : "All files";
@@ -243,6 +249,22 @@ export default function VaultPage() {
             Your study notes
           </h1>
           <div className="nm-head-actions">
+            {folderScope && folderCards > 0 ? (
+              <Link
+                className="nm-btn nm-btn--secondary"
+                href={
+                  folderDue > 0
+                    ? `/review?subject=${encodeURIComponent(folderScope)}`
+                    : `/review?subject=${encodeURIComponent(folderScope)}&view=deck`
+                }
+              >
+                <i
+                  className={`fa-solid ${folderDue > 0 ? "fa-clone" : "fa-table-list"}`}
+                  aria-hidden="true"
+                />
+                {folderDue > 0 ? `Review ${folderDue} due` : `Cards ${folderCards}`}
+              </Link>
+            ) : null}
             <button type="button" className="nm-btn nm-btn--secondary" onClick={() => setDashboard(true)}>
               <i className="fa-solid fa-chart-simple" aria-hidden="true" />
               Dashboard

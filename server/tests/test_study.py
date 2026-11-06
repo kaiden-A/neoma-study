@@ -105,6 +105,10 @@ def test_overview_dashboard_numbers(
         "/api/flashcards", json={"noteId": blank["id"], "front": "Q", "back": "A"}
     ).json()
     assert card["dueAt"] > 0
+    second = client.post(
+        "/api/flashcards", json={"noteId": blank["id"], "front": "Q2", "back": "A2"}
+    ).json()
+    assert second["dueAt"] > 0
 
     now = datetime.now(UTC)
     client.post(
@@ -125,7 +129,7 @@ def test_overview_dashboard_numbers(
     assert stats["name"] == "Thermodynamics"
     assert stats["notes"] == 2
     assert stats["files"] == 1
-    assert stats["cardsDue"] == 1
+    assert stats["cardsDue"] == 2
     assert stats["minutesThisWeek"] == 90
     assert stats["lastStudiedAt"] is not None
     continued = overview["continueStudy"]

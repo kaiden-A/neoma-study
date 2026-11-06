@@ -39,10 +39,11 @@ export function VaultHome({
   const folders = store.subjects.map((subject) => {
     const inside = notes.filter((note) => note.subjectId === subject.id);
     const latest = inside.reduce((max, note) => Math.max(max, note.updatedAt), 0);
-    return { subject, count: inside.length, latest };
+    return { subject, count: inside.length, latest, due: store.dueCards(now, subject.id).length };
   });
   const unsorted = notes.filter((note) => note.subjectId === null);
   const unsortedLatest = unsorted.reduce((max, note) => Math.max(max, note.updatedAt), 0);
+  const unsortedDue = store.dueCards(now, "unsorted").length;
   // Pinned first, then most recently edited; a glimpse, not the whole vault.
   const suggested = [...notes]
     .sort((a, b) => (a.pinned === b.pinned ? b.updatedAt - a.updatedAt : a.pinned ? -1 : 1))
@@ -55,12 +56,13 @@ export function VaultHome({
           <h2 className="nm-section-title">Folders</h2>
         </div>
         <div className="nm-foldergrid">
-          {folders.map(({ subject, count, latest }) => (
+          {folders.map(({ subject, count, latest, due }) => (
             <FolderCard
               key={subject.id}
               href={`/vault?subject=${subject.id}`}
               name={subject.name}
               color={subject.color}
+              due={due}
               meta={folderMeta(count, latest, now)}
               onMenu={(event) => onSubjectMenu(subject.id, event)}
             />
@@ -70,6 +72,7 @@ export function VaultHome({
               href="/vault?subject=unsorted"
               name="Unsorted"
               variant="inbox"
+              due={unsortedDue}
               meta={folderMeta(unsorted.length, unsortedLatest, now)}
             />
           ) : null}
