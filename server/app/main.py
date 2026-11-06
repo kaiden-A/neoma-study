@@ -130,6 +130,7 @@ app.include_router(google_router.router)
 app.include_router(moodle_router.router)
 app.include_router(notifications_router.router)
 app.include_router(maintenance_router.router)
+
 app.include_router(data_router.router)
 
 if settings.mcp_enabled:
